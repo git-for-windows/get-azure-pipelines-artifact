@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import {statSync} from 'fs'
+import fs from 'fs'
 import * as process from 'process'
 import * as child_process from 'child_process'
 import * as path from 'path'
@@ -28,35 +28,28 @@ if (process.env.RUN_NETWORK_TESTS !== 'true') {
     )
   })
 } else {
-  // shows how the runner will run a javascript action with env / stdout protocol
-  test('cannot download 32-bit minimal SDK', async () => {
-    expect(
-      await runAction({
-        env: {
-          INPUT_FLAVOR: 'minimal',
-          INPUT_ARCHITECTURE: 'i686'
-        }
-      })
-    ).toEqual(1)
-  })
-
   jest.setTimeout(5 * 60 * 1000) // this can easily take a minute or five
 
-  test('extract the 64-bit minimal SDK', async () => {
-    const outputDirectory = `${__dirname}/../git-sdk-64-minimal`
+  test('download `sparse` artifact', async () => {
+    const getSparsePackages = async (): Promise<string[]> => {
+      const files = await fs.promises.readdir('.')
+      return files.filter(e => e.match(/^sparse_.*\.deb$/))
+    }
+
+    for (const sparsePackage of await getSparsePackages()) {
+      await fs.promises.rm(sparsePackage)
+    }
+
     expect(
       await runAction({
         env: {
-          INPUT_FLAVOR: 'minimal',
-          INPUT_ARCHITECTURE: 'x86_64',
-          INPUT_PATH: outputDirectory,
-          INPUT_VERBOSE: '250',
+          INPUT_REPOSITORY: 'git/git',
+          INPUT_DEFINITIONID: '10',
+          INPUT_VERBOSE: 'true',
           INPUT_CACHE: 'true'
         }
       })
     ).toEqual(0)
-    expect(
-      statSync.bind(null, `${outputDirectory}/mingw64/bin/gcc.exe`)
-    ).not.toThrow()
+    expect(await getSparsePackages()).toHaveLength(1)
   })
 }

@@ -98,5 +98,5 @@ Thumbs.db
 __tests__/runner/*
 lib/**/*
 
-# Ignore downloaded 64-bit minimal SDK
-/git-sdk-64-minimal/
+# Ignore downloaded artifact
+/sparse_*.deb

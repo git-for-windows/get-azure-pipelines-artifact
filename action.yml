@@ -1,22 +1,22 @@
-name: 'Setup Git for Windows SDK'
-description: 'Set up an environment to develop Git for Windows'
+name: 'Download an artifact from an Azure Pipeline'
+description: 'Download an artifact from an Azure Pipeline'
 author: 'Johannes Schindelin'
 branding:
   icon: fast-forward
   color: blue
 inputs:
-  flavor:
+  repository:
+    required: true
+    description: 'The repository in which the Azure Pipeline lives'
+  definitionId:
+    required: true
+    description: 'The identifier of the Azure Pipeline'
+  artifact:
     required: false
-    description: 'The subset (if any) of the SDK: minimal, makepkg-git, build-installers, or full'
-    default: 'minimal'
-  architecture:
-    required: false
-    description: 'The architecture of the SDK: x86_64 or i686'
-    default: 'x86_64'
+    description: 'The name of the Azure Pipeline artifact'
   path:
     required: false
-    description: 'Where to write the SDK files'
-    default: ''
+    description: 'Where to write the artifact file(s)'
   verbose:
     required: false
     description: 'Whether to log files as they are extracted'
@@ -24,7 +24,7 @@ inputs:
   cache:
     required: false
     description: 'Use @actions/cache to accelerate this Action'
-    default: 'auto'
+    default: 'true'
 runs:
   using: 'node12'
   main: 'dist/index.js'

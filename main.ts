@@ -1,38 +1,22 @@
 import * as core from '@actions/core'
-import process from 'process'
 import {get} from './src/downloader'
 import {restoreCache, saveCache} from '@actions/cache'
 
 async function run(): Promise<void> {
   try {
-    if (process.platform !== 'win32') {
-      core.warning(
-        `Skipping this Action because it only works on Windows, not on ${process.platform}`
-      )
-      return
-    }
-    const flavor = core.getInput('flavor')
-    const architecture = core.getInput('architecture')
+    const {artifactName, download, cacheId} = await get(
+      core.getInput('repository'),
+      core.getInput('definitionId'),
+      core.getInput('artifact')
+    )
+    const outputDirectory = core.getInput('path') || '.'
+    let useCache = core.getInput('cache') === 'true'
     const verbose = core.getInput('verbose')
-
-    const {artifactName, download, id} = await get(flavor, architecture)
-    const outputDirectory = core.getInput('path') || `C:/${artifactName}`
-    let useCache: boolean
-    switch (core.getInput('cache')) {
-      case 'true':
-        useCache = true
-        break
-      case 'auto':
-        useCache = flavor !== 'full'
-        break
-      default:
-        useCache = false
-    }
 
     let needToDownload = true
     try {
-      if (useCache && (await restoreCache([outputDirectory], id))) {
-        core.info(`Cached ${id} was successfully restored`)
+      if (useCache && (await restoreCache([`outputDirectory/*`], cacheId))) {
+        core.info(`Cached ${cacheId} was successfully restored`)
         needToDownload = false
       }
     } catch (e) {
@@ -42,32 +26,18 @@ async function run(): Promise<void> {
 
     if (needToDownload) {
       core.info(`Downloading ${artifactName}`)
-      await download(
+      const files = await download(
         outputDirectory,
         verbose.match(/^\d+$/) ? parseInt(verbose) : verbose === 'true'
       )
 
       try {
-        if (useCache && !(await saveCache([outputDirectory], id))) {
-          core.warning(`Failed to cache ${id}`)
+        if (useCache && !(await saveCache(files, cacheId))) {
+          core.warning(`Failed to cache ${cacheId}`)
         }
       } catch (e) {
-        core.warning(`Failed to cache ${id}: ${e.message}`)
+        core.warning(`Failed to cache ${cacheId}: ${e.message}`)
       }
-    }
-
-    // Set up PATH so that Git for Windows' SDK's `bash.exe`, `prove` and `gcc` are found
-    core.addPath(`${outputDirectory}/usr/bin/core_perl`)
-    core.addPath(`${outputDirectory}/usr/bin`)
-    const msystem = architecture === 'i686' ? 'MINGW32' : 'MINGW64'
-    core.addPath(`${outputDirectory}/${msystem.toLocaleLowerCase()}/bin`)
-    core.exportVariable('MSYSTEM', msystem)
-    if (
-      !('LANG' in process.env) &&
-      !('LC_ALL' in process.env) &&
-      !('LC_CTYPE' in process.env)
-    ) {
-      core.exportVariable('LC_CTYPE', 'C.UTF-8')
     }
   } catch (error) {
     core.setFailed(error.message)

@@ -1,19 +1,14 @@
 {
     "cSpell.ignoreRegExpList": [
-        "CHERE_INVOKING",
-        "LC_CTYPE",
-        "SDK's",
-        "makepkg-git",
-        "mingw-w64-git",
-        "mingw32",
-        "mingw64",
+        "INPUT_DEFINITIONID",
+        "arrowParens",
         "vstfs://.*"
     ],
     "cSpell.words": [
         "Backoff",
-        "MSYSTEM",
-        "Pacman",
         "autodrain",
+        "dpkg",
+        "refname",
         "unzipper",
         "vercel"
     ],

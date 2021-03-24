@@ -1,8 +1,8 @@
 {
-  "name": "setup-git-for-windows-sdk",
+  "name": "get-azure-pipelines-artifact",
   "version": "0.0.0",
   "private": true,
-  "description": "Set up an environment to develop Git for WindowsTypeScript template action",
+  "description": "Download an artifact from an Azure Pipeline",
   "main": "lib/main.js",
   "scripts": {
     "build": "tsc",
@@ -15,14 +15,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/git-for-windows/setup-git-for-windows-sdk.git"
+    "url": "git+https://github.com/git-for-windows/get-azure-pipelines-artifact.git"
   },
   "keywords": [
     "actions",
     "node",
     "setup",
-    "git",
-    "git-for-windows"
+    "azure-pipelines"
   ],
   "author": "",
   "license": "MIT",
