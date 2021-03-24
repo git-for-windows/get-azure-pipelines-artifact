@@ -35,70 +35,63 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(2186));
-const process_1 = __importDefault(__nccwpck_require__(1765));
 const downloader_1 = __nccwpck_require__(7511);
 const cache_1 = __nccwpck_require__(7799);
+const fs_1 = __nccwpck_require__(5747);
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            if (process_1.default.platform !== 'win32') {
-                core.warning(`Skipping this Action because it only works on Windows, not on ${process_1.default.platform}`);
-                return;
-            }
-            const flavor = core.getInput('flavor');
-            const architecture = core.getInput('architecture');
-            const verbose = core.getInput('verbose');
-            const { artifactName, download, id } = yield downloader_1.get(flavor, architecture);
-            const outputDirectory = core.getInput('path') || `C:/${artifactName}`;
-            let useCache;
-            switch (core.getInput('cache')) {
-                case 'true':
-                    useCache = true;
-                    break;
-                case 'auto':
-                    useCache = flavor !== 'full';
-                    break;
-                default:
-                    useCache = false;
-            }
-            let needToDownload = true;
-            try {
-                if (useCache && (yield cache_1.restoreCache([outputDirectory], id))) {
-                    core.info(`Cached ${id} was successfully restored`);
-                    needToDownload = false;
-                }
-            }
-            catch (e) {
-                core.warning(`Cannot use @actions/cache (${e})`);
-                useCache = false;
-            }
-            if (needToDownload) {
-                core.info(`Downloading ${artifactName}`);
-                yield download(outputDirectory, verbose.match(/^\d+$/) ? parseInt(verbose) : verbose === 'true');
+            const { artifactName, stripPrefix, download, cacheId } = yield downloader_1.get(core.getInput('repository'), core.getInput('definitionId'), core.getInput('artifact'), core.getInput('stripPrefix'));
+            const outputDirectory = core.getInput('path') || artifactName;
+            let useCache = core.getInput('cache') === 'true';
+            const verbose = ((input) => input && input.match(/^\d+$/) ? parseInt(input) : input === 'true')(core.getInput('verbose'));
+            const isDirectoryEmpty = (path) => {
                 try {
-                    if (useCache && !(yield cache_1.saveCache([outputDirectory], id))) {
-                        core.warning(`Failed to cache ${id}`);
+                    return fs_1.readdirSync(path).length === 0;
+                }
+                catch (e) {
+                    return e && e.code === 'ENOENT';
+                }
+            };
+            let needToDownload = true;
+            let storeZipAs;
+            if (useCache) {
+                try {
+                    if (!isDirectoryEmpty(outputDirectory)) {
+                        storeZipAs = `${outputDirectory}/.${cacheId}.zip`;
+                        if (yield cache_1.restoreCache([storeZipAs], cacheId)) {
+                            yield downloader_1.unzip(`file:${storeZipAs}`, stripPrefix, outputDirectory, verbose);
+                            core.info(`Cached ${cacheId} was successfully restored`);
+                            needToDownload = false;
+                        }
+                    }
+                    else if (yield cache_1.restoreCache([outputDirectory], cacheId)) {
+                        core.info(`Cached ${cacheId} was successfully restored`);
+                        needToDownload = false;
                     }
                 }
                 catch (e) {
-                    core.warning(`Failed to cache ${id}: ${e.message}`);
+                    core.warning(`Cannot use @actions/cache (${e})`);
+                    useCache = false;
                 }
             }
-            // Set up PATH so that Git for Windows' SDK's `bash.exe`, `prove` and `gcc` are found
-            core.addPath(`${outputDirectory}/usr/bin/core_perl`);
-            core.addPath(`${outputDirectory}/usr/bin`);
-            const msystem = architecture === 'i686' ? 'MINGW32' : 'MINGW64';
-            core.addPath(`${outputDirectory}/${msystem.toLocaleLowerCase()}/bin`);
-            core.exportVariable('MSYSTEM', msystem);
-            if (!('LANG' in process_1.default.env) &&
-                !('LC_ALL' in process_1.default.env) &&
-                !('LC_CTYPE' in process_1.default.env)) {
-                core.exportVariable('LC_CTYPE', 'C.UTF-8');
+            if (needToDownload) {
+                core.info(`Downloading ${artifactName}`);
+                yield download(outputDirectory, verbose, storeZipAs);
+                try {
+                    if (useCache &&
+                        !(yield cache_1.saveCache([storeZipAs || outputDirectory], cacheId))) {
+                        core.warning(`Failed to cache ${cacheId}`);
+                    }
+                }
+                catch (e) {
+                    core.warning(`Failed to cache ${cacheId}: ${e.message}`);
+                }
+                if (storeZipAs) {
+                    fs_1.unlinkSync(storeZipAs);
+                }
             }
         }
         catch (error) {
@@ -129,15 +122,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.get = void 0;
+exports.get = exports.unzip = void 0;
 const fs_1 = __importDefault(__nccwpck_require__(5747));
 const https_1 = __importDefault(__nccwpck_require__(7211));
 const unzipper_1 = __importDefault(__nccwpck_require__(1639));
-const child_process_1 = __nccwpck_require__(3129);
-const path_1 = __nccwpck_require__(5622);
 const node_fetch_retry_1 = __importDefault(__nccwpck_require__(3006));
-const gitForWindowsUsrBinPath = 'C:/Program Files/Git/usr/bin';
-const gitForWindowsMINGW64BinPath = 'C:/Program Files/Git/mingw64/bin';
 function fetchJSONFromURL(url) {
     return __awaiter(this, void 0, void 0, function* () {
         const res = yield node_fetch_retry_1.default(url);
@@ -162,31 +151,39 @@ function mkdirp(directoryPath) {
     }
     fs_1.default.mkdirSync(directoryPath, { recursive: true });
 }
-function unzip(url, stripPrefix, outputDirectory, verbose, downloader) {
+function unzip(url, stripPrefix, outputDirectory, verbose, storeZipAs) {
     return __awaiter(this, void 0, void 0, function* () {
+        const files = [];
         let progress = verbose === false
-            ? () => { }
+            ? (path) => {
+                if (path !== undefined) {
+                    files.push(path);
+                }
+            }
             : (path) => {
-                path === undefined || process.stderr.write(`${path}\n`);
+                if (path !== undefined) {
+                    files.push(path);
+                    process.stderr.write(`${path}\n`);
+                }
             };
         if (typeof verbose === 'number') {
             let counter = 0;
             progress = (path) => {
-                if (path === undefined || ++counter % verbose === 0) {
-                    process.stderr.write(`${counter} items extracted\n`);
+                if (path !== undefined) {
+                    files.push(path);
+                    if (++counter % verbose === 0) {
+                        process.stderr.write(`${counter} items extracted\n`);
+                    }
                 }
             };
         }
         mkdirp(outputDirectory);
-        if (downloader) {
-            // `https.get()` seems to have performance problems that cause frequent
-            // ECONNRESET problems with larger payloads. Let's (ab-)use Git for Windows'
-            // `curl.exe` to do the downloading for us in that case.
-            return yield downloader(url, outputDirectory, verbose);
-        }
         return new Promise((resolve, reject) => {
-            https_1.default
-                .get(url, (res) => {
+            const callback = (res) => {
+                if (storeZipAs) {
+                    process.stderr.write(`Writing ${storeZipAs}\n`);
+                    res.pipe(fs_1.default.createWriteStream(storeZipAs)).on('error', reject);
+                }
                 res
                     .on('error', reject)
                     .pipe(unzipper_1.default.Parse())
@@ -195,121 +192,72 @@ function unzip(url, stripPrefix, outputDirectory, verbose, downloader) {
                         process.stderr.write(`warning: skipping ${entry.path} because it does not start with ${stripPrefix}\n`);
                     }
                     const entryPath = `${outputDirectory}/${entry.path.substring(stripPrefix.length)}`;
-                    progress(entryPath);
                     if (entryPath.endsWith('/')) {
                         mkdirp(entryPath.replace(/\/$/, ''));
                         entry.autodrain();
                     }
                     else {
+                        progress(entryPath);
                         entry.pipe(fs_1.default.createWriteStream(`${entryPath}`));
                     }
                 })
                     .on('error', reject)
                     .on('finish', progress)
-                    .on('finish', resolve);
-            })
-                .on('error', reject);
+                    .on('finish', () => resolve(files));
+            };
+            if (url.startsWith('file:')) {
+                callback(fs_1.default.createReadStream(url.substring('file:'.length)));
+            }
+            else {
+                https_1.default.get(url, callback).on('error', reject);
+            }
         });
     });
 }
-/* We're (ab-)using Git for Windows' `tar.exe` and `xz.exe` to do the job */
-function unpackTarXZInZipFromURL(url, outputDirectory, verbose = false) {
+exports.unzip = unzip;
+function get(repository, definitionId, artifactName, stripPrefix) {
     return __awaiter(this, void 0, void 0, function* () {
-        const tmp = yield fs_1.default.promises.mkdtemp(`${outputDirectory}/tmp`);
-        const zipPath = `${tmp}/artifacts.zip`;
-        const curl = child_process_1.spawn(`${gitForWindowsMINGW64BinPath}/curl.exe`, [
-            '--retry',
-            '16',
-            '--retry-all-errors',
-            '--retry-connrefused',
-            '-o',
-            zipPath,
-            url
-        ], { stdio: [undefined, 'inherit', 'inherit'] });
-        yield new Promise((resolve, reject) => {
-            curl
-                .on('close', code => code === 0 ? resolve() : reject(new Error(`${code}`)))
-                .on('error', e => reject(new Error(`${e}`)));
-        });
-        const zipContents = (yield unzipper_1.default.Open.file(zipPath)).files.filter(e => !e.path.endsWith('/'));
-        if (zipContents.length !== 1) {
-            throw new Error(`${zipPath} does not contain exactly one file (${zipContents.map(e => e.path)})`);
+        if (!repository || !definitionId) {
+            throw new Error(`Need repository and definitionId (got ${repository} and ${definitionId})`);
         }
-        // eslint-disable-next-line no-console
-        console.log(`unzipping ${zipPath}\n`);
-        const tarXZ = child_process_1.spawn(`${gitForWindowsUsrBinPath}/bash.exe`, [
-            '-lc',
-            `unzip -p "${zipPath}" ${zipContents[0].path} | tar ${verbose === true ? 'xJvf' : 'xJf'} -`
-        ], {
-            cwd: outputDirectory,
-            env: {
-                CHERE_INVOKING: '1',
-                MSYSTEM: 'MINGW64',
-                PATH: `${gitForWindowsUsrBinPath}${path_1.delimiter}${process.env.PATH}`
-            },
-            stdio: [undefined, 'inherit', 'inherit']
-        });
-        yield new Promise((resolve, reject) => {
-            tarXZ.on('close', code => {
-                if (code === 0) {
-                    resolve();
-                }
-                else {
-                    reject(new Error(`tar: exited with code ${code}`));
-                }
-            });
-        });
-        yield fs_1.default.promises.rmdir(tmp, { recursive: true });
-    });
-}
-function get(flavor, architecture) {
-    return __awaiter(this, void 0, void 0, function* () {
-        if (!['x86_64', 'i686'].includes(architecture)) {
-            throw new Error(`Unsupported architecture: ${architecture}`);
-        }
-        let definitionId;
-        let artifactName;
-        switch (flavor) {
-            case 'minimal':
-                if (architecture === 'i686') {
-                    throw new Error(`Flavor "minimal" is only available for x86_64`);
-                }
-                definitionId = 22;
-                artifactName = 'git-sdk-64-minimal';
-                break;
-            case 'makepkg-git':
-                if (architecture === 'i686') {
-                    throw new Error(`Flavor "makepkg-git" is only available for x86_64`);
-                }
-                definitionId = 29;
-                artifactName = 'git-sdk-64-makepkg-git';
-                break;
-            case 'build-installers':
-            case 'full':
-                definitionId = architecture === 'i686' ? 30 : 29;
-                artifactName = `git-sdk-${architecture === 'i686' ? 32 : 64}-${flavor === 'full' ? 'full-sdk' : flavor}`;
-                break;
-            default:
-                throw new Error(`Unknown flavor: '${flavor}`);
-        }
-        const baseURL = 'https://dev.azure.com/git-for-windows/git/_apis/build/builds';
+        const baseURL = `https://dev.azure.com/${repository}/_apis/build/builds`;
         const data = yield fetchJSONFromURL(`${baseURL}?definitions=${definitionId}&statusFilter=completed&resultFilter=succeeded&$top=1`);
         if (data.count !== 1) {
             throw new Error(`Unexpected number of builds: ${data.count}`);
         }
-        const id = `${artifactName}-${data.value[0].id}`;
-        const download = (outputDirectory, verbose = false) => __awaiter(this, void 0, void 0, function* () {
+        let url;
+        const getURL = () => __awaiter(this, void 0, void 0, function* () {
             const data2 = yield fetchJSONFromURL(`${baseURL}/${data.value[0].id}/artifacts`);
+            if (!artifactName) {
+                if (data2.value.length !== 1) {
+                    throw new Error(`Cannot deduce artifact name (candidates: ${data2.value
+                        .map(e => e.name)
+                        .join(', ')})`);
+                }
+                artifactName = data2.value[0].name;
+            }
             const filtered = data2.value.filter(e => e.name === artifactName);
             if (filtered.length !== 1) {
-                throw new Error(`Could not find ${artifactName} in ${JSON.stringify(data2, null, 4)}`);
+                throw new Error(`Could not find ${artifactName} in ${data2.value
+                    .map(e => e.name)
+                    .join(', ')}`);
             }
-            const url = filtered[0].resource.downloadUrl;
+            return filtered[0].resource.downloadUrl;
+        });
+        if (!artifactName) {
+            url = yield getURL();
+        }
+        if (!stripPrefix) {
+            stripPrefix = `${artifactName}/`;
+        }
+        const download = (outputDirectory, verbose = false, storeZipAs) => __awaiter(this, void 0, void 0, function* () {
+            if (!url) {
+                url = yield getURL();
+            }
             let delayInSeconds = 1;
             for (;;) {
                 try {
-                    yield unzip(url, `${artifactName}/`, outputDirectory, verbose, flavor === 'full' ? unpackTarXZInZipFromURL : undefined);
-                    break;
+                    return yield unzip(url, stripPrefix || `${artifactName}/`, outputDirectory, verbose, storeZipAs);
                 }
                 catch (e) {
                     delayInSeconds *= 2;
@@ -321,7 +269,8 @@ function get(flavor, architecture) {
                 }
             }
         });
-        return { artifactName, download, id };
+        const cacheId = `${repository}-${definitionId}-${artifactName}-${data.value[0].id}`.replace('/', '.');
+        return { artifactName, stripPrefix, download, cacheId };
     });
 }
 exports.get = get;
@@ -76468,14 +76417,6 @@ module.exports = require("os");;
 
 "use strict";
 module.exports = require("path");;
-
-/***/ }),
-
-/***/ 1765:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("process");;
 
 /***/ }),
 
