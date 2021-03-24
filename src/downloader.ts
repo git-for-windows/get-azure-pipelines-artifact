@@ -2,12 +2,7 @@ import fs from 'fs'
 import https from 'https'
 import {Readable} from 'stream'
 import unzipper from 'unzipper'
-import {spawn} from 'child_process'
-import {delimiter} from 'path'
 import fetch from '@adobe/node-fetch-retry'
-
-const gitForWindowsUsrBinPath = 'C:/Program Files/Git/usr/bin'
-const gitForWindowsMINGW64BinPath = 'C:/Program Files/Git/mingw64/bin'
 
 async function fetchJSONFromURL<T>(url: string): Promise<T> {
   const res = await fetch(url)
@@ -38,37 +33,36 @@ async function unzip(
   url: string,
   stripPrefix: string,
   outputDirectory: string,
-  verbose: boolean | number,
-  downloader?: (
-    _url: string,
-    directory: string,
-    _verbose: boolean | number
-  ) => Promise<void>
-): Promise<void> {
+  verbose: boolean | number
+): Promise<string[]> {
+  const files: string[] = []
   let progress =
     verbose === false
-      ? (): void => {}
+      ? (path: string): void => {
+          if (path !== undefined) {
+            files.push(path)
+          }
+        }
       : (path: string): void => {
-          path === undefined || process.stderr.write(`${path}\n`)
+          if (path !== undefined) {
+            files.push(path)
+            process.stderr.write(`${path}\n`)
+          }
         }
   if (typeof verbose === 'number') {
     let counter = 0
     progress = (path?: string): void => {
-      if (path === undefined || ++counter % verbose === 0) {
-        process.stderr.write(`${counter} items extracted\n`)
+      if (path !== undefined) {
+        files.push(path)
+        if (++counter % verbose === 0) {
+          process.stderr.write(`${counter} items extracted\n`)
+        }
       }
     }
   }
   mkdirp(outputDirectory)
 
-  if (downloader) {
-    // `https.get()` seems to have performance problems that cause frequent
-    // ECONNRESET problems with larger payloads. Let's (ab-)use Git for Windows'
-    // `curl.exe` to do the downloading for us in that case.
-    return await downloader(url, outputDirectory, verbose)
-  }
-
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<string[]>((resolve, reject) => {
     https
       .get(url, (res: Readable): void => {
         res
@@ -83,138 +77,40 @@ async function unzip(
             const entryPath = `${outputDirectory}/${entry.path.substring(
               stripPrefix.length
             )}`
-            progress(entryPath)
             if (entryPath.endsWith('/')) {
               mkdirp(entryPath.replace(/\/$/, ''))
               entry.autodrain()
             } else {
+              progress(entryPath)
               entry.pipe(fs.createWriteStream(`${entryPath}`))
             }
           })
           .on('error', reject)
           .on('finish', progress)
-          .on('finish', resolve)
+          .on('finish', () => resolve(files))
       })
       .on('error', reject)
   })
 }
 
-/* We're (ab-)using Git for Windows' `tar.exe` and `xz.exe` to do the job */
-async function unpackTarXZInZipFromURL(
-  url: string,
-  outputDirectory: string,
-  verbose: boolean | number = false
-): Promise<void> {
-  const tmp = await fs.promises.mkdtemp(`${outputDirectory}/tmp`)
-  const zipPath = `${tmp}/artifacts.zip`
-  const curl = spawn(
-    `${gitForWindowsMINGW64BinPath}/curl.exe`,
-    [
-      '--retry',
-      '16',
-      '--retry-all-errors',
-      '--retry-connrefused',
-      '-o',
-      zipPath,
-      url
-    ],
-    {stdio: [undefined, 'inherit', 'inherit']}
-  )
-  await new Promise<void>((resolve, reject) => {
-    curl
-      .on('close', code =>
-        code === 0 ? resolve() : reject(new Error(`${code}`))
-      )
-      .on('error', e => reject(new Error(`${e}`)))
-  })
-
-  const zipContents = (await unzipper.Open.file(zipPath)).files.filter(
-    e => !e.path.endsWith('/')
-  )
-  if (zipContents.length !== 1) {
-    throw new Error(
-      `${zipPath} does not contain exactly one file (${zipContents.map(
-        e => e.path
-      )})`
-    )
-  }
-
-  // eslint-disable-next-line no-console
-  console.log(`unzipping ${zipPath}\n`)
-  const tarXZ = spawn(
-    `${gitForWindowsUsrBinPath}/bash.exe`,
-    [
-      '-lc',
-      `unzip -p "${zipPath}" ${zipContents[0].path} | tar ${
-        verbose === true ? 'xJvf' : 'xJf'
-      } -`
-    ],
-    {
-      cwd: outputDirectory,
-      env: {
-        CHERE_INVOKING: '1',
-        MSYSTEM: 'MINGW64',
-        PATH: `${gitForWindowsUsrBinPath}${delimiter}${process.env.PATH}`
-      },
-      stdio: [undefined, 'inherit', 'inherit']
-    }
-  )
-  await new Promise<void>((resolve, reject) => {
-    tarXZ.on('close', code => {
-      if (code === 0) {
-        resolve()
-      } else {
-        reject(new Error(`tar: exited with code ${code}`))
-      }
-    })
-  })
-  await fs.promises.rmdir(tmp, {recursive: true})
-}
-
 export async function get(
-  flavor: string,
-  architecture: string
+  repository: string,
+  definitionId: string,
+  artifactName: string
 ): Promise<{
   artifactName: string
-  id: string
+  cacheId: string
   download: (
     outputDirectory: string,
     verbose?: number | boolean
-  ) => Promise<void>
+  ) => Promise<string[]>
 }> {
-  if (!['x86_64', 'i686'].includes(architecture)) {
-    throw new Error(`Unsupported architecture: ${architecture}`)
+  if (!repository || !definitionId) {
+    throw new Error(
+      `Need repository and definitionId (got ${repository} and ${definitionId})`
+    )
   }
-
-  let definitionId: number
-  let artifactName: string
-  switch (flavor) {
-    case 'minimal':
-      if (architecture === 'i686') {
-        throw new Error(`Flavor "minimal" is only available for x86_64`)
-      }
-      definitionId = 22
-      artifactName = 'git-sdk-64-minimal'
-      break
-    case 'makepkg-git':
-      if (architecture === 'i686') {
-        throw new Error(`Flavor "makepkg-git" is only available for x86_64`)
-      }
-      definitionId = 29
-      artifactName = 'git-sdk-64-makepkg-git'
-      break
-    case 'build-installers':
-    case 'full':
-      definitionId = architecture === 'i686' ? 30 : 29
-      artifactName = `git-sdk-${architecture === 'i686' ? 32 : 64}-${
-        flavor === 'full' ? 'full-sdk' : flavor
-      }`
-      break
-    default:
-      throw new Error(`Unknown flavor: '${flavor}`)
-  }
-
-  const baseURL = 'https://dev.azure.com/git-for-windows/git/_apis/build/builds'
+  const baseURL = `https://dev.azure.com/${repository}/_apis/build/builds`
   const data = await fetchJSONFromURL<{
     count: number
     value: [{id: string; downloadURL: string}]
@@ -224,33 +120,48 @@ export async function get(
   if (data.count !== 1) {
     throw new Error(`Unexpected number of builds: ${data.count}`)
   }
-  const id = `${artifactName}-${data.value[0].id}`
-  const download = async (
-    outputDirectory: string,
-    verbose: number | boolean = false
-  ): Promise<void> => {
+  let url: string | undefined
+  const getURL = async (): Promise<string> => {
     const data2 = await fetchJSONFromURL<{
       count: number
       value: [{name: string; resource: {downloadUrl: string}}]
     }>(`${baseURL}/${data.value[0].id}/artifacts`)
+    if (!artifactName) {
+      if (data2.value.length !== 1) {
+        throw new Error(
+          `Cannot deduce artifact name (candidates: ${data2.value
+            .map(e => e.name)
+            .join(', ')})`
+        )
+      }
+      artifactName = data2.value[0].name
+    }
     const filtered = data2.value.filter(e => e.name === artifactName)
     if (filtered.length !== 1) {
       throw new Error(
-        `Could not find ${artifactName} in ${JSON.stringify(data2, null, 4)}`
+        `Could not find ${artifactName} in ${data2.value
+          .map(e => e.name)
+          .join(', ')}`
       )
     }
-    const url = filtered[0].resource.downloadUrl
+    return filtered[0].resource.downloadUrl
+  }
+
+  if (!artifactName) {
+    url = await getURL()
+  }
+
+  const download = async (
+    outputDirectory: string,
+    verbose: number | boolean = false
+  ): Promise<string[]> => {
+    if (!url) {
+      url = await getURL()
+    }
     let delayInSeconds = 1
     for (;;) {
       try {
-        await unzip(
-          url,
-          `${artifactName}/`,
-          outputDirectory,
-          verbose,
-          flavor === 'full' ? unpackTarXZInZipFromURL : undefined
-        )
-        break
+        return await unzip(url, `${artifactName}/`, outputDirectory, verbose)
       } catch (e) {
         delayInSeconds *= 2
         if (delayInSeconds >= 60) {
@@ -265,5 +176,7 @@ export async function get(
       }
     }
   }
-  return {artifactName, download, id}
+
+  const cacheId = `${repository}-${definitionId}-${artifactName}-${data.value[0].id}`
+  return {artifactName, download, cacheId}
 }
