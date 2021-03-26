@@ -42,6 +42,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
+        with:
+          repository: microsoft/vcpkg
+          path: compat/vcbuild/vcpkg
+          clean: false
       - name: Run this Action in-place
         uses: ./
         with:
@@ -51,4 +56,4 @@ jobs:
           stripPrefix: compat/vcbuild/vcpkg/
       - name: Verify that the artifact files were downloaded
         shell: bash
-        run: compat/vcbuild/vcpkg/vcpkg.exe version
+        run: compat/vcbuild/vcpkg/vcpkg.exe version && ls -la compat/vcbuild/vcpkg/.git
