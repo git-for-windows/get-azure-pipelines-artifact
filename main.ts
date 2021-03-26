@@ -8,7 +8,8 @@ async function run(): Promise<void> {
     const {artifactName, download, cacheId} = await get(
       core.getInput('repository'),
       core.getInput('definitionId'),
-      core.getInput('artifact')
+      core.getInput('artifact'),
+      core.getInput('stripPrefix')
     )
     const outputDirectory = core.getInput('path') || artifactName
     let useCache = core.getInput('cache') === 'true'

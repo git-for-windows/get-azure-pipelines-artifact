@@ -96,7 +96,8 @@ async function unzip(
 export async function get(
   repository: string,
   definitionId: string,
-  artifactName: string
+  artifactName: string,
+  stripPrefix?: string
 ): Promise<{
   artifactName: string
   cacheId: string
@@ -161,7 +162,12 @@ export async function get(
     let delayInSeconds = 1
     for (;;) {
       try {
-        return await unzip(url, `${artifactName}/`, outputDirectory, verbose)
+        return await unzip(
+          url,
+          stripPrefix || `${artifactName}/`,
+          outputDirectory,
+          verbose
+        )
       } catch (e) {
         delayInSeconds *= 2
         if (delayInSeconds >= 60) {

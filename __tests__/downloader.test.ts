@@ -49,7 +49,12 @@ test('can obtain build ID', async () => {
   mocked(fetch).mockReturnValue(
     Promise.resolve(new Response(JSON.stringify(buildIdResponse)))
   )
-  const {cacheId} = await get('git-for-windows/git', '22', 'git-sdk-64-minimal')
+  const {cacheId} = await get(
+    'git-for-windows/git',
+    '22',
+    'git-sdk-64-minimal',
+    undefined
+  )
   expect(fetch).toHaveBeenCalledTimes(1)
   expect(cacheId).toEqual('git-for-windows/git-22-git-sdk-64-minimal-71000')
 })

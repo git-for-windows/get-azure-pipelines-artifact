@@ -38,3 +38,17 @@ jobs:
       - name: Verify that the package was downloaded
         shell: bash
         run: test -f sparse/sparse_*.deb
+  test-strip-prefix: # make sure the action works on a clean machine without building
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Run this Action in-place
+        uses: ./
+        with:
+          repository: git/git
+          definitionId: 9
+          path: compat/vcbuild/vcpkg
+          stripPrefix: compat/vcbuild/vcpkg/
+      - name: Verify that the artifact files were downloaded
+        shell: bash
+        run: compat/vcbuild/vcpkg/vcpkg.exe version
