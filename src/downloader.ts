@@ -187,6 +187,9 @@ export async function get(
     }
   }
 
-  const cacheId = `${repository}-${definitionId}-${artifactName}-${data.value[0].id}`
+  const cacheId = `${repository}-${definitionId}-${artifactName}-${data.value[0].id}`.replace(
+    '/',
+    '.'
+  )
   return {artifactName, stripPrefix, download, cacheId}
 }
