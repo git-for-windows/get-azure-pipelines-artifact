@@ -29,11 +29,12 @@ function mkdirp(directoryPath: string): void {
   fs.mkdirSync(directoryPath, {recursive: true})
 }
 
-async function unzip(
+export async function unzip(
   url: string,
   stripPrefix: string,
   outputDirectory: string,
-  verbose: boolean | number
+  verbose: boolean | number,
+  storeZipAs?: string
 ): Promise<string[]> {
   const files: string[] = []
   let progress =
@@ -64,6 +65,10 @@ async function unzip(
 
   return new Promise<string[]>((resolve, reject) => {
     const callback = (res: Readable): void => {
+      if (storeZipAs) {
+        process.stderr.write(`Writing ${storeZipAs}\n`)
+        res.pipe(fs.createWriteStream(storeZipAs)).on('error', reject)
+      }
       res
         .on('error', reject)
         .pipe(unzipper.Parse())
@@ -88,7 +93,11 @@ async function unzip(
         .on('finish', progress)
         .on('finish', () => resolve(files))
     }
-    https.get(url, callback).on('error', reject)
+    if (url.startsWith('file:')) {
+      callback(fs.createReadStream(url.substring('file:'.length)))
+    } else {
+      https.get(url, callback).on('error', reject)
+    }
   })
 }
 
@@ -103,7 +112,8 @@ export async function get(
   cacheId: string
   download: (
     outputDirectory: string,
-    verbose?: number | boolean
+    verbose?: number | boolean,
+    storeZipAs?: string
   ) => Promise<string[]>
 }> {
   if (!repository || !definitionId) {
@@ -158,7 +168,8 @@ export async function get(
 
   const download = async (
     outputDirectory: string,
-    verbose: number | boolean = false
+    verbose: number | boolean = false,
+    storeZipAs?: string
   ): Promise<string[]> => {
     if (!url) {
       url = await getURL()
@@ -170,7 +181,8 @@ export async function get(
           url,
           stripPrefix || `${artifactName}/`,
           outputDirectory,
-          verbose
+          verbose,
+          storeZipAs
         )
       } catch (e) {
         delayInSeconds *= 2

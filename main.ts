@@ -1,7 +1,7 @@
 import * as core from '@actions/core'
-import {get} from './src/downloader'
+import {unzip, get} from './src/downloader'
 import {restoreCache, saveCache} from '@actions/cache'
-import {readdirSync} from 'fs'
+import {readdirSync, unlinkSync} from 'fs'
 
 async function run(): Promise<void> {
   try {
@@ -26,14 +26,23 @@ async function run(): Promise<void> {
       }
     }
 
-    if (useCache && !isDirectoryEmpty(outputDirectory)) {
-      throw new Error(`Directory '${outputDirectory}' not empty`)
-    }
-
     let needToDownload = true
+    let storeZipAs: string | undefined
     if (useCache) {
       try {
-        if (await restoreCache([outputDirectory], cacheId)) {
+        if (!isDirectoryEmpty(outputDirectory)) {
+          storeZipAs = `${outputDirectory}/.${cacheId}.zip`
+          if (await restoreCache([storeZipAs], cacheId)) {
+            await unzip(
+              `file:${storeZipAs}`,
+              stripPrefix,
+              outputDirectory,
+              verbose
+            )
+            core.info(`Cached ${cacheId} was successfully restored`)
+            needToDownload = false
+          }
+        } else if (await restoreCache([outputDirectory], cacheId)) {
           core.info(`Cached ${cacheId} was successfully restored`)
           needToDownload = false
         }
@@ -45,14 +54,21 @@ async function run(): Promise<void> {
 
     if (needToDownload) {
       core.info(`Downloading ${artifactName}`)
-      await download(outputDirectory, verbose)
+      await download(outputDirectory, verbose, storeZipAs)
 
       try {
-        if (useCache && !(await saveCache([outputDirectory], cacheId))) {
+        if (
+          useCache &&
+          !(await saveCache([storeZipAs || outputDirectory], cacheId))
+        ) {
           core.warning(`Failed to cache ${cacheId}`)
         }
       } catch (e) {
         core.warning(`Failed to cache ${cacheId}: ${e.message}`)
+      }
+
+      if (storeZipAs) {
+        unlinkSync(storeZipAs)
       }
     }
   } catch (error) {
