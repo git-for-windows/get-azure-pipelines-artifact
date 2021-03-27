@@ -31,14 +31,16 @@ async function run(): Promise<void> {
     }
 
     let needToDownload = true
-    try {
-      if (useCache && (await restoreCache([outputDirectory], cacheId))) {
-        core.info(`Cached ${cacheId} was successfully restored`)
-        needToDownload = false
+    if (useCache) {
+      try {
+        if (await restoreCache([outputDirectory], cacheId)) {
+          core.info(`Cached ${cacheId} was successfully restored`)
+          needToDownload = false
+        }
+      } catch (e) {
+        core.warning(`Cannot use @actions/cache (${e})`)
+        useCache = false
       }
-    } catch (e) {
-      core.warning(`Cannot use @actions/cache (${e})`)
-      useCache = false
     }
 
     if (needToDownload) {
