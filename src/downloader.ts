@@ -100,6 +100,7 @@ export async function get(
   stripPrefix?: string
 ): Promise<{
   artifactName: string
+  stripPrefix: string
   cacheId: string
   download: (
     outputDirectory: string,
@@ -152,6 +153,10 @@ export async function get(
     url = await getURL()
   }
 
+  if (!stripPrefix) {
+    stripPrefix = `${artifactName}/`
+  }
+
   const download = async (
     outputDirectory: string,
     verbose: number | boolean = false
@@ -184,5 +189,5 @@ export async function get(
   }
 
   const cacheId = `${repository}-${definitionId}-${artifactName}-${data.value[0].id}`
-  return {artifactName, download, cacheId}
+  return {artifactName, stripPrefix, download, cacheId}
 }

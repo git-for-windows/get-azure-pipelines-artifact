@@ -5,7 +5,7 @@ import {readdirSync} from 'fs'
 
 async function run(): Promise<void> {
   try {
-    const {artifactName, download, cacheId} = await get(
+    const {artifactName, stripPrefix, download, cacheId} = await get(
       core.getInput('repository'),
       core.getInput('definitionId'),
       core.getInput('artifact'),
@@ -13,7 +13,10 @@ async function run(): Promise<void> {
     )
     const outputDirectory = core.getInput('path') || artifactName
     let useCache = core.getInput('cache') === 'true'
-    const verbose = core.getInput('verbose')
+    const verbose: number | boolean = ((input?: string) =>
+      input && input.match(/^\d+$/) ? parseInt(input) : input === 'true')(
+      core.getInput('verbose')
+    )
 
     const isDirectoryEmpty = (path: string): boolean => {
       try {
@@ -40,10 +43,7 @@ async function run(): Promise<void> {
 
     if (needToDownload) {
       core.info(`Downloading ${artifactName}`)
-      await download(
-        outputDirectory,
-        verbose.match(/^\d+$/) ? parseInt(verbose) : verbose === 'true'
-      )
+      await download(outputDirectory, verbose)
 
       try {
         if (useCache && !(await saveCache([outputDirectory], cacheId))) {
