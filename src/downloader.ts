@@ -63,33 +63,32 @@ async function unzip(
   mkdirp(outputDirectory)
 
   return new Promise<string[]>((resolve, reject) => {
-    https
-      .get(url, (res: Readable): void => {
-        res
-          .on('error', reject)
-          .pipe(unzipper.Parse())
-          .on('entry', entry => {
-            if (!entry.path.startsWith(stripPrefix)) {
-              process.stderr.write(
-                `warning: skipping ${entry.path} because it does not start with ${stripPrefix}\n`
-              )
-            }
-            const entryPath = `${outputDirectory}/${entry.path.substring(
-              stripPrefix.length
-            )}`
-            if (entryPath.endsWith('/')) {
-              mkdirp(entryPath.replace(/\/$/, ''))
-              entry.autodrain()
-            } else {
-              progress(entryPath)
-              entry.pipe(fs.createWriteStream(`${entryPath}`))
-            }
-          })
-          .on('error', reject)
-          .on('finish', progress)
-          .on('finish', () => resolve(files))
-      })
-      .on('error', reject)
+    const callback = (res: Readable): void => {
+      res
+        .on('error', reject)
+        .pipe(unzipper.Parse())
+        .on('entry', entry => {
+          if (!entry.path.startsWith(stripPrefix)) {
+            process.stderr.write(
+              `warning: skipping ${entry.path} because it does not start with ${stripPrefix}\n`
+            )
+          }
+          const entryPath = `${outputDirectory}/${entry.path.substring(
+            stripPrefix.length
+          )}`
+          if (entryPath.endsWith('/')) {
+            mkdirp(entryPath.replace(/\/$/, ''))
+            entry.autodrain()
+          } else {
+            progress(entryPath)
+            entry.pipe(fs.createWriteStream(`${entryPath}`))
+          }
+        })
+        .on('error', reject)
+        .on('finish', progress)
+        .on('finish', () => resolve(files))
+    }
+    https.get(url, callback).on('error', reject)
   })
 }
 
