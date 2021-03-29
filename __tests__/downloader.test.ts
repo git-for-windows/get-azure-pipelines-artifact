@@ -214,6 +214,6 @@ test('can obtain build ID', async () => {
     'git-sdk-64-minimal',
     undefined
   )
-  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(fetch).toHaveBeenCalledTimes(2)
   expect(cacheId).toEqual('git-for-windows.git-22-git-sdk-64-minimal-73427')
 })

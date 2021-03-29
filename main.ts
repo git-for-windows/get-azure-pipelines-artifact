@@ -5,7 +5,13 @@ import {readdirSync, unlinkSync} from 'fs'
 
 async function run(): Promise<void> {
   try {
-    const {artifactName, stripPrefix, download, cacheId} = await get(
+    const {
+      artifactName,
+      stripPrefix,
+      download,
+      bytesToExtract,
+      cacheId
+    } = await get(
       core.getInput('repository'),
       core.getInput('definitionId'),
       core.getInput('artifact'),
@@ -35,6 +41,7 @@ async function run(): Promise<void> {
           if (await restoreCache([storeZipAs], cacheId)) {
             await unzip(
               `file:${storeZipAs}`,
+              bytesToExtract,
               stripPrefix,
               outputDirectory,
               verbose

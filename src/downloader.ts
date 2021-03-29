@@ -31,6 +31,7 @@ function mkdirp(directoryPath: string): void {
 
 export async function unzip(
   url: string,
+  bytesToExtract: number,
   stripPrefix: string,
   outputDirectory: string,
   verbose: boolean | number,
@@ -86,12 +87,21 @@ export async function unzip(
             entry.autodrain()
           } else {
             progress(entryPath)
-            entry.pipe(fs.createWriteStream(`${entryPath}`))
+            entry
+              .pipe(fs.createWriteStream(`${entryPath}`))
+              .on('finish', () => {
+                bytesToExtract -= fs.statSync(entryPath).size
+              })
           }
         })
         .on('error', reject)
         .on('finish', progress)
-        .on('finish', () => resolve(files))
+        .on('finish', () => {
+          bytesToExtract === 0
+            ? resolve(files)
+            : // eslint-disable-next-line prefer-promise-reject-errors
+              reject(`${bytesToExtract} bytes left to extract`)
+        })
     }
     if (url.startsWith('file:')) {
       callback(fs.createReadStream(url.substring('file:'.length)))
@@ -109,6 +119,7 @@ export async function get(
 ): Promise<{
   artifactName: string
   stripPrefix: string
+  bytesToExtract: number
   cacheId: string
   download: (
     outputDirectory: string,
@@ -131,11 +142,15 @@ export async function get(
   if (data.count !== 1) {
     throw new Error(`Unexpected number of builds: ${data.count}`)
   }
-  let url: string | undefined
-  const getURL = async (): Promise<string> => {
+  const getURL = async (): Promise<{url: string; bytesToExtract: number}> => {
     const data2 = await fetchJSONFromURL<{
       count: number
-      value: [{name: string; resource: {downloadUrl: string}}]
+      value: [
+        {
+          name: string
+          resource: {downloadUrl: string; properties: {artifactsize: number}}
+        }
+      ]
     }>(`${baseURL}/${data.value[0].id}/artifacts`)
     if (!artifactName) {
       if (data2.value.length !== 1) {
@@ -155,12 +170,14 @@ export async function get(
           .join(', ')}`
       )
     }
-    return filtered[0].resource.downloadUrl
+
+    return {
+      url: filtered[0].resource.downloadUrl,
+      bytesToExtract: filtered[0].resource.properties.artifactsize
+    }
   }
 
-  if (!artifactName) {
-    url = await getURL()
-  }
+  const {url, bytesToExtract} = await getURL()
 
   if (!stripPrefix) {
     stripPrefix = `${artifactName}/`
@@ -171,14 +188,12 @@ export async function get(
     verbose: number | boolean = false,
     storeZipAs?: string
   ): Promise<string[]> => {
-    if (!url) {
-      url = await getURL()
-    }
     let delayInSeconds = 1
     for (;;) {
       try {
         return await unzip(
           url,
+          bytesToExtract,
           stripPrefix || `${artifactName}/`,
           outputDirectory,
           verbose,
@@ -203,5 +218,5 @@ export async function get(
     '/',
     '.'
   )
-  return {artifactName, stripPrefix, download, cacheId}
+  return {artifactName, stripPrefix, download, bytesToExtract, cacheId}
 }
