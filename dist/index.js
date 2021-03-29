@@ -43,7 +43,7 @@ const fs_1 = __nccwpck_require__(5747);
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            const { artifactName, stripPrefix, download, cacheId } = yield downloader_1.get(core.getInput('repository'), core.getInput('definitionId'), core.getInput('artifact'), core.getInput('stripPrefix'));
+            const { artifactName, stripPrefix, download, bytesToExtract, cacheId } = yield downloader_1.get(core.getInput('repository'), core.getInput('definitionId'), core.getInput('artifact'), core.getInput('stripPrefix'));
             const outputDirectory = core.getInput('path') || artifactName;
             let useCache = core.getInput('cache') === 'true';
             const verbose = ((input) => input && input.match(/^\d+$/) ? parseInt(input) : input === 'true')(core.getInput('verbose'));
@@ -62,7 +62,7 @@ function run() {
                     if (!isDirectoryEmpty(outputDirectory)) {
                         storeZipAs = `${outputDirectory}/.${cacheId}.zip`;
                         if (yield cache_1.restoreCache([storeZipAs], cacheId)) {
-                            yield downloader_1.unzip(`file:${storeZipAs}`, stripPrefix, outputDirectory, verbose);
+                            yield downloader_1.unzip(`file:${storeZipAs}`, bytesToExtract, stripPrefix, outputDirectory, verbose);
                             core.info(`Cached ${cacheId} was successfully restored`);
                             needToDownload = false;
                         }
@@ -151,7 +151,7 @@ function mkdirp(directoryPath) {
     }
     fs_1.default.mkdirSync(directoryPath, { recursive: true });
 }
-function unzip(url, stripPrefix, outputDirectory, verbose, storeZipAs) {
+function unzip(url, bytesToExtract, stripPrefix, outputDirectory, verbose, storeZipAs) {
     return __awaiter(this, void 0, void 0, function* () {
         const files = [];
         let progress = verbose === false
@@ -198,12 +198,21 @@ function unzip(url, stripPrefix, outputDirectory, verbose, storeZipAs) {
                     }
                     else {
                         progress(entryPath);
-                        entry.pipe(fs_1.default.createWriteStream(`${entryPath}`));
+                        entry
+                            .pipe(fs_1.default.createWriteStream(`${entryPath}`))
+                            .on('finish', () => {
+                            bytesToExtract -= fs_1.default.statSync(entryPath).size;
+                        });
                     }
                 })
                     .on('error', reject)
                     .on('finish', progress)
-                    .on('finish', () => resolve(files));
+                    .on('finish', () => {
+                    bytesToExtract === 0
+                        ? resolve(files)
+                        : // eslint-disable-next-line prefer-promise-reject-errors
+                            reject(`${bytesToExtract} bytes left to extract`);
+                });
             };
             if (url.startsWith('file:')) {
                 callback(fs_1.default.createReadStream(url.substring('file:'.length)));
@@ -225,7 +234,6 @@ function get(repository, definitionId, artifactName, stripPrefix) {
         if (data.count !== 1) {
             throw new Error(`Unexpected number of builds: ${data.count}`);
         }
-        let url;
         const getURL = () => __awaiter(this, void 0, void 0, function* () {
             const data2 = yield fetchJSONFromURL(`${baseURL}/${data.value[0].id}/artifacts`);
             if (!artifactName) {
@@ -242,22 +250,20 @@ function get(repository, definitionId, artifactName, stripPrefix) {
                     .map(e => e.name)
                     .join(', ')}`);
             }
-            return filtered[0].resource.downloadUrl;
+            return {
+                url: filtered[0].resource.downloadUrl,
+                bytesToExtract: filtered[0].resource.properties.artifactsize
+            };
         });
-        if (!artifactName) {
-            url = yield getURL();
-        }
+        const { url, bytesToExtract } = yield getURL();
         if (!stripPrefix) {
             stripPrefix = `${artifactName}/`;
         }
         const download = (outputDirectory, verbose = false, storeZipAs) => __awaiter(this, void 0, void 0, function* () {
-            if (!url) {
-                url = yield getURL();
-            }
             let delayInSeconds = 1;
             for (;;) {
                 try {
-                    return yield unzip(url, stripPrefix || `${artifactName}/`, outputDirectory, verbose, storeZipAs);
+                    return yield unzip(url, bytesToExtract, stripPrefix || `${artifactName}/`, outputDirectory, verbose, storeZipAs);
                 }
                 catch (e) {
                     delayInSeconds *= 2;
@@ -270,7 +276,7 @@ function get(repository, definitionId, artifactName, stripPrefix) {
             }
         });
         const cacheId = `${repository}-${definitionId}-${artifactName}-${data.value[0].id}`.replace('/', '.');
-        return { artifactName, stripPrefix, download, cacheId };
+        return { artifactName, stripPrefix, download, bytesToExtract, cacheId };
     });
 }
 exports.get = get;
