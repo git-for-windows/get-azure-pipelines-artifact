@@ -8,6 +8,7 @@
         "Backoff",
         "autodrain",
         "dpkg",
+        "localpath",
         "refname",
         "unzipper",
         "vercel"
