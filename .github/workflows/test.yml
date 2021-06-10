@@ -35,9 +35,10 @@ jobs:
         with:
           repository: git/git
           definitionId: 10
+          artifact: sparse-20.04
       - name: Verify that the package was downloaded
         shell: bash
-        run: test -f sparse/sparse_*.deb
+        run: test -f sparse-20.04/sparse_*.deb
   test-strip-prefix: # make sure the action works on a clean machine without building
     runs-on: windows-latest
     steps:
