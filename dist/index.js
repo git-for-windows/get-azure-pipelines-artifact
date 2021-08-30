@@ -42,16 +42,16 @@ const fs_1 = __nccwpck_require__(5747);
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            const { artifactName, stripPrefix, download, bytesToExtract, cacheId } = yield downloader_1.get(core.getInput('repository'), core.getInput('definitionId'), core.getInput('artifact'), core.getInput('stripPrefix'));
+            const { artifactName, stripPrefix, download, bytesToExtract, cacheId } = yield (0, downloader_1.get)(core.getInput('repository'), core.getInput('definitionId'), core.getInput('artifact'), core.getInput('stripPrefix'));
             const outputDirectory = core.getInput('path') || artifactName;
             let useCache = core.getInput('cache') === 'true';
             const verbose = ((input) => input && input.match(/^\d+$/) ? parseInt(input) : input === 'true')(core.getInput('verbose'));
             const isDirectoryEmpty = (path) => {
                 try {
-                    return fs_1.readdirSync(path).length === 0;
+                    return (0, fs_1.readdirSync)(path).length === 0;
                 }
                 catch (e) {
-                    return e && e.code === 'ENOENT';
+                    return e instanceof Object && e.code === 'ENOENT';
                 }
             };
             let needToDownload = true;
@@ -60,13 +60,13 @@ function run() {
                 try {
                     if (!isDirectoryEmpty(outputDirectory)) {
                         storeZipAs = `${outputDirectory}/.${cacheId}.zip`;
-                        if (yield cache_1.restoreCache([storeZipAs], cacheId)) {
-                            yield downloader_1.unzip(`file:${storeZipAs}`, bytesToExtract, stripPrefix, outputDirectory, verbose);
+                        if (yield (0, cache_1.restoreCache)([storeZipAs], cacheId)) {
+                            yield (0, downloader_1.unzip)(`file:${storeZipAs}`, bytesToExtract, stripPrefix, outputDirectory, verbose);
                             core.info(`Cached ${cacheId} was successfully restored`);
                             needToDownload = false;
                         }
                     }
-                    else if (yield cache_1.restoreCache([outputDirectory], cacheId)) {
+                    else if (yield (0, cache_1.restoreCache)([outputDirectory], cacheId)) {
                         core.info(`Cached ${cacheId} was successfully restored`);
                         needToDownload = false;
                     }
@@ -81,20 +81,20 @@ function run() {
                 yield download(outputDirectory, verbose, storeZipAs);
                 try {
                     if (useCache &&
-                        !(yield cache_1.saveCache([storeZipAs || outputDirectory], cacheId))) {
+                        !(yield (0, cache_1.saveCache)([storeZipAs || outputDirectory], cacheId))) {
                         core.warning(`Failed to cache ${cacheId}`);
                     }
                 }
                 catch (e) {
-                    core.warning(`Failed to cache ${cacheId}: ${e.message}`);
+                    core.warning(`Failed to cache ${cacheId}: ${e instanceof Error && e.message}`);
                 }
                 if (storeZipAs) {
-                    fs_1.unlinkSync(storeZipAs);
+                    (0, fs_1.unlinkSync)(storeZipAs);
                 }
             }
         }
         catch (error) {
-            core.setFailed(error.message);
+            core.setFailed(error instanceof Error ? error.message : `${error}`);
         }
     });
 }
@@ -128,7 +128,7 @@ const unzipper_1 = __importDefault(__nccwpck_require__(1639));
 const node_fetch_retry_1 = __importDefault(__nccwpck_require__(3006));
 function fetchJSONFromURL(url) {
     return __awaiter(this, void 0, void 0, function* () {
-        const res = yield node_fetch_retry_1.default(url);
+        const res = yield (0, node_fetch_retry_1.default)(url);
         if (res.status !== 200) {
             throw new Error(`Got code ${res.status}, URL: ${url}, message: ${res.statusText}`);
         }
@@ -144,7 +144,7 @@ function mkdirp(directoryPath) {
         throw new Error(`${directoryPath} exists, but is not a directory`);
     }
     catch (e) {
-        if (!e || e.code !== 'ENOENT') {
+        if (!(e instanceof Object) || e.code !== 'ENOENT') {
             throw e;
         }
     }
