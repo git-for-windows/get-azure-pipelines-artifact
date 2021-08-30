@@ -28,7 +28,7 @@ async function run(): Promise<void> {
       try {
         return readdirSync(path).length === 0
       } catch (e) {
-        return e && e.code === 'ENOENT'
+        return e instanceof Object && (e as any).code === 'ENOENT'
       }
     }
 
@@ -71,7 +71,7 @@ async function run(): Promise<void> {
           core.warning(`Failed to cache ${cacheId}`)
         }
       } catch (e) {
-        core.warning(`Failed to cache ${cacheId}: ${e.message}`)
+        core.warning(`Failed to cache ${cacheId}: ${e instanceof Error && e.message}`)
       }
 
       if (storeZipAs) {
@@ -79,7 +79,7 @@ async function run(): Promise<void> {
       }
     }
   } catch (error) {
-    core.setFailed(error.message)
+    core.setFailed(error instanceof Error ? error.message : `${error}`)
   }
 }
 
