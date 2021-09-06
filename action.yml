@@ -28,6 +28,10 @@ inputs:
     required: false
     description: 'Use @actions/cache to accelerate this Action'
     default: 'true'
+  reasonFilter:
+    required: false
+    description: 'Filter results by the reason for the build; Defaults to "all"'
+    default: 'all'
 runs:
   using: 'node12'
   main: 'dist/index.js'
