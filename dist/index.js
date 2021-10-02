@@ -42,7 +42,7 @@ const fs_1 = __nccwpck_require__(5747);
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            const { artifactName, stripPrefix, download, bytesToExtract, cacheId } = yield (0, downloader_1.get)(core.getInput('repository'), core.getInput('definitionId'), core.getInput('artifact'), core.getInput('stripPrefix'));
+            const { artifactName, stripPrefix, download, bytesToExtract, cacheId } = yield (0, downloader_1.get)(core.getInput('repository'), core.getInput('definitionId'), core.getInput('artifact'), core.getInput('stripPrefix'), core.getInput('reasonFilter'));
             const outputDirectory = core.getInput('path') || artifactName;
             let useCache = core.getInput('cache') === 'true';
             const verbose = ((input) => input && input.match(/^\d+$/) ? parseInt(input) : input === 'true')(core.getInput('verbose'));
@@ -223,13 +223,13 @@ function unzip(url, bytesToExtract, stripPrefix, outputDirectory, verbose, store
     });
 }
 exports.unzip = unzip;
-function get(repository, definitionId, artifactName, stripPrefix) {
+function get(repository, definitionId, artifactName, stripPrefix, reasonFilter = 'all') {
     return __awaiter(this, void 0, void 0, function* () {
         if (!repository || !definitionId) {
             throw new Error(`Need repository and definitionId (got ${repository} and ${definitionId})`);
         }
         const baseURL = `https://dev.azure.com/${repository}/_apis/build/builds`;
-        const data = yield fetchJSONFromURL(`${baseURL}?definitions=${definitionId}&statusFilter=completed&resultFilter=succeeded&$top=1`);
+        const data = yield fetchJSONFromURL(`${baseURL}?definitions=${definitionId}&statusFilter=completed&resultFilter=succeeded&reasonFilter=${reasonFilter}&$top=1`);
         if (data.count !== 1) {
             throw new Error(`Unexpected number of builds: ${data.count}`);
         }

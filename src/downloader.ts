@@ -115,7 +115,8 @@ export async function get(
   repository: string,
   definitionId: string,
   artifactName: string,
-  stripPrefix?: string
+  stripPrefix?: string,
+  reasonFilter = 'all'
 ): Promise<{
   artifactName: string
   stripPrefix: string
@@ -137,7 +138,7 @@ export async function get(
     count: number
     value: [{id: string; downloadURL: string}]
   }>(
-    `${baseURL}?definitions=${definitionId}&statusFilter=completed&resultFilter=succeeded&$top=1`
+    `${baseURL}?definitions=${definitionId}&statusFilter=completed&resultFilter=succeeded&reasonFilter=${reasonFilter}&$top=1`
   )
   if (data.count !== 1) {
     throw new Error(`Unexpected number of builds: ${data.count}`)

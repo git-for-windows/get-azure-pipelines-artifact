@@ -46,6 +46,11 @@ Every Azure Pipeline has a numerical identifier that is part of the URL. For exa
 
 Pipelines can have an arbitrary number of artifacts, which are identified by a name. The `artifact` parameter specifies which one to download. It can be omitted if the given Pipeline run has only one artifact attached to it.
 
+### Build filters
+
+The `reasonFilter` parameter can be added to filter by the reason for a build.
+A list of accepted reasons can be found [here](https://docs.microsoft.com/en-us/rest/api/azure/devops/build/builds/list?view=azure-devops-rest-6.0#buildreason). This parameter defaults to `all` if omitted.
+
 ### Strip prefix
 
 Pipeline artifacts can contain entire directory structures. The `stripPrefix` parameter allows filtering by a given path prefix; Any files matching that prefix will be written (after stripping the prefix), all other files will be skipped.
