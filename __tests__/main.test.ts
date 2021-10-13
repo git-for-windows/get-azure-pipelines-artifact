@@ -37,7 +37,7 @@ if (process.env.RUN_NETWORK_TESTS !== 'true') {
     }
 
     for (const sparsePackage of await getSparsePackages()) {
-      await fs.promises.rm(sparsePackage)
+      await fs.promises.unlink(sparsePackage)
     }
 
     expect(
