@@ -122,17 +122,17 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.get = exports.unzip = void 0;
+const node_fetch_retry_1 = __importDefault(__nccwpck_require__(3006));
 const fs_1 = __importDefault(__nccwpck_require__(5747));
 const https_1 = __importDefault(__nccwpck_require__(7211));
 const unzipper_1 = __importDefault(__nccwpck_require__(1639));
-const node_fetch_retry_1 = __importDefault(__nccwpck_require__(3006));
 function fetchJSONFromURL(url) {
     return __awaiter(this, void 0, void 0, function* () {
         const res = yield (0, node_fetch_retry_1.default)(url);
         if (res.status !== 200) {
             throw new Error(`Got code ${res.status}, URL: ${url}, message: ${res.statusText}`);
         }
-        return res.json();
+        return (yield res.json());
     });
 }
 function mkdirp(directoryPath) {
