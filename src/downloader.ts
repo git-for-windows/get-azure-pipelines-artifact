@@ -1,8 +1,8 @@
+import {Readable} from 'stream'
+import fetch from '@adobe/node-fetch-retry'
 import fs from 'fs'
 import https from 'https'
-import {Readable} from 'stream'
 import unzipper from 'unzipper'
-import fetch from '@adobe/node-fetch-retry'
 
 async function fetchJSONFromURL<T>(url: string): Promise<T> {
   const res = await fetch(url)
