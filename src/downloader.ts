@@ -22,7 +22,7 @@ function mkdirp(directoryPath: string): void {
     }
     throw new Error(`${directoryPath} exists, but is not a directory`)
   } catch (e) {
-    if (!(e instanceof Object) || (e as any).code !== 'ENOENT') {
+    if (!(e instanceof Object) || (e as {code: string}).code !== 'ENOENT') {
       throw e
     }
   }
@@ -215,9 +215,10 @@ export async function get(
     }
   }
 
-  const cacheId = `${repository}-${definitionId}-${artifactName}-${data.value[0].id}`.replace(
-    '/',
-    '.'
-  )
+  const cacheId =
+    `${repository}-${definitionId}-${artifactName}-${data.value[0].id}`.replace(
+      '/',
+      '.'
+    )
   return {artifactName, stripPrefix, download, bytesToExtract, cacheId}
 }
