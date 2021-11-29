@@ -8,24 +8,19 @@ const buildIdResponse = {
     {
       _links: {
         self: {
-          href:
-            'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/Builds/73427'
+          href: 'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/Builds/73427'
         },
         web: {
-          href:
-            'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_build/results?buildId=73427'
+          href: 'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_build/results?buildId=73427'
         },
         sourceVersionDisplayUri: {
-          href:
-            'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/builds/73427/sources'
+          href: 'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/builds/73427/sources'
         },
         timeline: {
-          href:
-            'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/builds/73427/Timeline'
+          href: 'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/builds/73427/Timeline'
         },
         badge: {
-          href:
-            'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/status/22'
+          href: 'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/status/22'
         }
       },
       properties: {},
@@ -45,14 +40,12 @@ const buildIdResponse = {
       queueTime: '2021-03-29T03:15:02.4106708Z',
       startTime: '2021-03-29T03:15:18.5120843Z',
       finishTime: '2021-03-29T03:49:59.8824069Z',
-      url:
-        'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/Builds/73427',
+      url: 'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/Builds/73427',
       definition: {
         drafts: [],
         id: 22,
         name: 'git-sdk-64-minimal',
-        url:
-          'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/Definitions/22?revision=42',
+        url: 'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/Definitions/22?revision=42',
         uri: 'vstfs:///Build/Definition/22',
         path: '\\',
         type: 'build',
@@ -62,8 +55,7 @@ const buildIdResponse = {
           id: 'f3317b6a-fa67-40d4-9a33-b652e06943df',
           name: 'git',
           description: 'Git for Windows',
-          url:
-            'https://dev.azure.com/Git-for-Windows/_apis/projects/f3317b6a-fa67-40d4-9a33-b652e06943df',
+          url: 'https://dev.azure.com/Git-for-Windows/_apis/projects/f3317b6a-fa67-40d4-9a33-b652e06943df',
           state: 'wellFormed',
           revision: 58,
           visibility: 'public',
@@ -74,8 +66,7 @@ const buildIdResponse = {
         id: 'f3317b6a-fa67-40d4-9a33-b652e06943df',
         name: 'git',
         description: 'Git for Windows',
-        url:
-          'https://dev.azure.com/Git-for-Windows/_apis/projects/f3317b6a-fa67-40d4-9a33-b652e06943df',
+        url: 'https://dev.azure.com/Git-for-Windows/_apis/projects/f3317b6a-fa67-40d4-9a33-b652e06943df',
         state: 'wellFormed',
         revision: 58,
         visibility: 'public',
@@ -88,12 +79,10 @@ const buildIdResponse = {
       reason: 'individualCI',
       requestedFor: {
         displayName: 'Microsoft.VisualStudio.Services.TFS',
-        url:
-          'https://spsprodcus1.vssps.visualstudio.com/A7ef732d2-e7e4-499c-8f88-7ee74b5c51cc/_apis/Identities/00000002-0000-8888-8000-000000000000',
+        url: 'https://spsprodcus1.vssps.visualstudio.com/A7ef732d2-e7e4-499c-8f88-7ee74b5c51cc/_apis/Identities/00000002-0000-8888-8000-000000000000',
         _links: {
           avatar: {
-            href:
-              'https://dev.azure.com/Git-for-Windows/_apis/GraphProfile/MemberAvatars/s2s.MDAwMDAwMDItMDAwMC04ODg4LTgwMDAtMDAwMDAwMDAwMDAwQDJjODk1OTA4LTA0ZTAtNDk1Mi04OWZkLTU0YjAwNDZkNjI4OA'
+            href: 'https://dev.azure.com/Git-for-Windows/_apis/GraphProfile/MemberAvatars/s2s.MDAwMDAwMDItMDAwMC04ODg4LTgwMDAtMDAwMDAwMDAwMDAwQDJjODk1OTA4LTA0ZTAtNDk1Mi04OWZkLTU0YjAwNDZkNjI4OA'
           }
         },
         id: '00000002-0000-8888-8000-000000000000',
@@ -104,12 +93,10 @@ const buildIdResponse = {
       },
       requestedBy: {
         displayName: 'Microsoft.VisualStudio.Services.TFS',
-        url:
-          'https://spsprodcus1.vssps.visualstudio.com/A7ef732d2-e7e4-499c-8f88-7ee74b5c51cc/_apis/Identities/00000002-0000-8888-8000-000000000000',
+        url: 'https://spsprodcus1.vssps.visualstudio.com/A7ef732d2-e7e4-499c-8f88-7ee74b5c51cc/_apis/Identities/00000002-0000-8888-8000-000000000000',
         _links: {
           avatar: {
-            href:
-              'https://dev.azure.com/Git-for-Windows/_apis/GraphProfile/MemberAvatars/s2s.MDAwMDAwMDItMDAwMC04ODg4LTgwMDAtMDAwMDAwMDAwMDAwQDJjODk1OTA4LTA0ZTAtNDk1Mi04OWZkLTU0YjAwNDZkNjI4OA'
+            href: 'https://dev.azure.com/Git-for-Windows/_apis/GraphProfile/MemberAvatars/s2s.MDAwMDAwMDItMDAwMC04ODg4LTgwMDAtMDAwMDAwMDAwMDAwQDJjODk1OTA4LTA0ZTAtNDk1Mi04OWZkLTU0YjAwNDZkNjI4OA'
           }
         },
         id: '00000002-0000-8888-8000-000000000000',
@@ -121,12 +108,10 @@ const buildIdResponse = {
       lastChangedDate: '2021-03-29T03:50:00.2Z',
       lastChangedBy: {
         displayName: 'Microsoft.VisualStudio.Services.TFS',
-        url:
-          'https://spsprodcus1.vssps.visualstudio.com/A7ef732d2-e7e4-499c-8f88-7ee74b5c51cc/_apis/Identities/00000002-0000-8888-8000-000000000000',
+        url: 'https://spsprodcus1.vssps.visualstudio.com/A7ef732d2-e7e4-499c-8f88-7ee74b5c51cc/_apis/Identities/00000002-0000-8888-8000-000000000000',
         _links: {
           avatar: {
-            href:
-              'https://dev.azure.com/Git-for-Windows/_apis/GraphProfile/MemberAvatars/s2s.MDAwMDAwMDItMDAwMC04ODg4LTgwMDAtMDAwMDAwMDAwMDAwQDJjODk1OTA4LTA0ZTAtNDk1Mi04OWZkLTU0YjAwNDZkNjI4OA'
+            href: 'https://dev.azure.com/Git-for-Windows/_apis/GraphProfile/MemberAvatars/s2s.MDAwMDAwMDItMDAwMC04ODg4LTgwMDAtMDAwMDAwMDAwMDAwQDJjODk1OTA4LTA0ZTAtNDk1Mi04OWZkLTU0YjAwNDZkNjI4OA'
           }
         },
         id: '00000002-0000-8888-8000-000000000000',
@@ -139,8 +124,7 @@ const buildIdResponse = {
       logs: {
         id: 0,
         type: 'Container',
-        url:
-          'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/builds/73427/logs'
+        url: 'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/builds/73427/logs'
       },
       repository: {
         id: 'git-for-windows/git-sdk-64',
@@ -164,15 +148,13 @@ const artifactResponse = {
       source: 'fd490c07-0b22-5182-fac9-6d67fe1e939b',
       resource: {
         type: 'PipelineArtifact',
-        data:
-          'A7DC9A9D5763E9B7A287E22EBE4BBE297B74AAC544823A86AD215C0D9A8EEDD001',
+        data: 'A7DC9A9D5763E9B7A287E22EBE4BBE297B74AAC544823A86AD215C0D9A8EEDD001',
         properties: {
           RootId:
             'B1146F8C4772281CA63EA26BE97329B69A740CA21B7C3B8B74AFE4BEE9B30DE902',
           artifactsize: '49185757'
         },
-        url:
-          'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/builds/73427/artifacts?artifactName=git-artifacts&api-version=6.0',
+        url: 'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/builds/73427/artifacts?artifactName=git-artifacts&api-version=6.0',
         downloadUrl:
           'https://artprodcus3.artifacts.visualstudio.com/Ac037a06e-1e3b-41a1-b045-ce593a4d2ab4/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/artifact/cGlwZWxpbmVhcnRpZmFjdDovL0dpdC1mb3ItV2luZG93cy9wcm9qZWN0SWQvZjMzMTdiNmEtZmE2Ny00MGQ0LTlhMzMtYjY1MmUwNjk0M2RmL2J1aWxkSWQvNzM0MjcvYXJ0aWZhY3ROYW1lL2dpdC1hcnRpZmFjdHM1/content?format=zip'
       }
@@ -188,8 +170,7 @@ const artifactResponse = {
           localpath: 'D:\\a\\1\\s\\git-sdk-64-minimal',
           artifactsize: '249437960'
         },
-        url:
-          'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/builds/73427/artifacts?artifactName=git-sdk-64-minimal&api-version=6.0',
+        url: 'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/builds/73427/artifacts?artifactName=git-sdk-64-minimal&api-version=6.0',
         downloadUrl:
           'https://dev.azure.com/Git-for-Windows/f3317b6a-fa67-40d4-9a33-b652e06943df/_apis/build/builds/73427/artifacts?artifactName=git-sdk-64-minimal&api-version=6.0&%24format=zip'
       }
