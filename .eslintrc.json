@@ -1,5 +1,10 @@
 {
-    "plugins": ["jest", "@typescript-eslint", "anti-trojan-source"],
+    "env": {
+      "node": true,
+      "jest": true,
+      "es6": true,
+      "jest/globals": true
+    },
     "extends": ["plugin:github/recommended"],
     "parser": "@typescript-eslint/parser",
     "parserOptions": {
@@ -7,6 +12,7 @@
       "sourceType": "module",
       "project": "./tsconfig.json"
     },
+    "plugins": ["jest", "@typescript-eslint", "anti-trojan-source"],
     "rules": {
       "@typescript-eslint/array-type": "error",
       "@typescript-eslint/await-thenable": "error",
@@ -48,11 +54,5 @@
       "import/no-namespace": "off",
       "no-unused-vars": "off",
       "semi": "off"
-    },
-    "env": {
-      "node": true,
-      "jest": true,
-      "es6": true,
-      "jest/globals": true
     }
   }
