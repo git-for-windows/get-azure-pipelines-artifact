@@ -2,8 +2,7 @@
     "env": {
       "node": true,
       "jest": true,
-      "es6": true,
-      "jest/globals": true
+      "es6": true
     },
     "extends": ["plugin:github/recommended"],
     "parser": "@typescript-eslint/parser",
