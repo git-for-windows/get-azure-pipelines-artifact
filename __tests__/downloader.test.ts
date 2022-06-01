@@ -1,6 +1,5 @@
 import fetch from 'node-fetch'
 import {get} from '../src/downloader'
-import {mocked} from 'ts-jest/utils'
 
 const buildIdResponse = {
   count: 1,
@@ -182,7 +181,8 @@ jest.mock('node-fetch')
 const {Response} = jest.requireActual('node-fetch')
 
 test('can obtain build ID', async () => {
-  mocked(fetch)
+  jest
+    .mocked(fetch)
     .mockReturnValueOnce(
       Promise.resolve(new Response(JSON.stringify(buildIdResponse)))
     )
