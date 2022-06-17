@@ -14,7 +14,7 @@ on:
 jobs:
   npm-run-package-and-push: # make sure build/ci work properly
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.repository.owner.login }} == 'git-for-windows'
+    if: github.event_name == 'workflow_dispatch' || github.event.repository.owner.login == 'git-for-windows'
     environment: git-for-windows-ci-push
     steps:
       - uses: actions/checkout@v2
