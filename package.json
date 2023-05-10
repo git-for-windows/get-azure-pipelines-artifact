@@ -30,7 +30,7 @@
     "@actions/core": "^1.10.0",
     "@adobe/node-fetch-retry": "^2.2.0",
     "node-fetch": "^2.6.11",
-    "unzipper": "^0.10.11"
+    "unzipper": "^0.10.14"
   },
   "devDependencies": {
     "@types/jest": "^28.1.8",
