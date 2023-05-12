@@ -73126,10 +73126,17 @@ module.exports = function centralDirectory(source, options) {
       }
     })
     .then(function() {
+      if (vars.commentLength) return endDir.pull(vars.commentLength).then(function(comment) {
+        vars.comment = comment.toString('utf8');
+      });
+    })
+    .then(function() {
       source.stream(vars.offsetToStartOfCentralDirectory).pipe(records);
 
       vars.extract = function(opts) {
         if (!opts || !opts.path) throw new Error('PATH_MISSING');
+        // make sure path is normalized before using it
+        opts.path = path.resolve(path.normalize(opts.path));
         return vars.files.then(function(files) {
           return Promise.map(files, function(entry) {
             if (entry.type == 'Directory') return;
@@ -73150,7 +73157,7 @@ module.exports = function centralDirectory(source, options) {
                 .on('close',resolve)
                 .on('error',reject);
             });
-          }, opts.concurrency > 1 ? {concurrency: opts.concurrency || undefined} : undefined);
+          }, { concurrency: opts.concurrency > 1 ? opts.concurrency : 1 });
         });
       };
 
@@ -73182,7 +73189,7 @@ module.exports = function centralDirectory(source, options) {
         return records.pull(vars.fileNameLength).then(function(fileNameBuffer) {
           vars.pathBuffer = fileNameBuffer;
           vars.path = fileNameBuffer.toString('utf8');
-          vars.isUnicode = vars.flags & 0x11;
+          vars.isUnicode = (vars.flags & 0x800) != 0;
           return records.pull(vars.extraFieldLength);
         })
         .then(function(extraField) {
@@ -73308,6 +73315,10 @@ module.exports = {
     };
 
     return directory(source, options);
+  },
+
+  custom: function(source, options) {
+    return directory(source, options);
   }
 };
 
@@ -73425,7 +73436,9 @@ module.exports = function unzip(source,offset,_password, directoryVars) {
         .on('error',function(err) { entry.emit('error',err);})
         .pipe(entry)
         .on('finish', function() {
-          if (req.abort)
+          if(req.destroy)
+            req.destroy()
+          else if (req.abort)
             req.abort();
           else if (req.close)
             req.close();
@@ -73528,10 +73541,9 @@ PullStream.prototype.stream = function(eof,includeEof) {
     }
     
     if (!done) {
-      if (self.finished && !this.__ended) {
+      if (self.finished) {
         self.removeListener('chunk',pull);
         self.emit('error', new Error('FILE_ENDED'));
-        this.__ended = true;
         return;
       }
       
@@ -73690,6 +73702,7 @@ function Parse(opts) {
 
   PullStream.call(self, self._opts);
   self.on('finish',function() {
+    self.emit('end');
     self.emit('close');
   });
   self._readRecord().catch(function(e) {
@@ -73715,16 +73728,19 @@ Parse.prototype._readRecord = function () {
       return self._readFile();
     }
     else if (signature === 0x02014b50) {
-      self.__ended = true;
+      self.reachedCD = true;
       return self._readCentralDirectoryFileHeader();
     }
     else if (signature === 0x06054b50) {
       return self._readEndOfCentralDirectoryRecord();
     }
-    else if (self.__ended) {
-      return self.pull(endDirectorySignature).then(function() {
-          return self._readEndOfCentralDirectoryRecord();
-        });
+    else if (self.reachedCD) {
+      // _readEndOfCentralDirectoryRecord expects the EOCD
+      // signature to be consumed so set includeEof=true
+      var includeEof = true;
+      return self.pull(endDirectorySignature, includeEof).then(function() {
+        return self._readEndOfCentralDirectoryRecord();
+      });
     }
     else
       self.emit('error', new Error('invalid signature: 0x' + signature.toString(16)));
@@ -73794,7 +73810,7 @@ Parse.prototype._readFile = function () {
       entry.props.path = fileName;
       entry.props.pathBuffer = fileNameBuffer;
       entry.props.flags = {
-        "isUnicode": vars.flags & 0x11
+        "isUnicode": (vars.flags & 0x800) != 0
       };
       entry.type = (vars.uncompressedSize === 0 && /[\/\\]$/.test(fileName)) ? 'Directory' : 'File';
 
