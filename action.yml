@@ -33,5 +33,5 @@ inputs:
     description: 'Filter results by the reason for the build; Defaults to "all"'
     default: 'all'
 runs:
-  using: 'node16'
+  using: 'node20'
   main: 'dist/index.js'
