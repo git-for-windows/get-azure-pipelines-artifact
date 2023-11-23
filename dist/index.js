@@ -187,12 +187,25 @@ function unzip(url, bytesToExtract, stripPrefix, outputDirectory, verbose, store
                     process.stderr.write(`Writing ${storeZipAs}\n`);
                     res.pipe(fs_1.default.createWriteStream(storeZipAs)).on('error', reject);
                 }
+                let writingEntry = false;
+                let wroteLastEntry = false;
+                const finish = () => {
+                    if (writingEntry || !wroteLastEntry)
+                        return;
+                    if (bytesToExtract === 0)
+                        resolve(files);
+                    // eslint-disable-next-line prefer-promise-reject-errors
+                    else
+                        reject(`${bytesToExtract} bytes left to extract`);
+                };
                 res
                     .on('error', reject)
                     .pipe(unzipper_1.default.Parse())
                     .on('entry', entry => {
                     if (!entry.path.startsWith(stripPrefix)) {
                         process.stderr.write(`warning: skipping ${entry.path} because it does not start with ${stripPrefix}\n`);
+                        entry.autodrain();
+                        return;
                     }
                     const entryPath = `${outputDirectory}/${entry.path.substring(stripPrefix.length)}`;
                     if (entryPath.endsWith('/')) {
@@ -200,21 +213,23 @@ function unzip(url, bytesToExtract, stripPrefix, outputDirectory, verbose, store
                         entry.autodrain();
                     }
                     else {
+                        writingEntry = true;
                         progress(entryPath);
                         entry
                             .pipe(fs_1.default.createWriteStream(`${entryPath}`))
+                            .on('error', reject)
                             .on('finish', () => {
                             bytesToExtract -= fs_1.default.statSync(entryPath).size;
+                            writingEntry = false;
+                            finish();
                         });
                     }
                 })
                     .on('error', reject)
                     .on('finish', progress)
                     .on('finish', () => {
-                    bytesToExtract === 0
-                        ? resolve(files)
-                        : // eslint-disable-next-line prefer-promise-reject-errors
-                            reject(`${bytesToExtract} bytes left to extract`);
+                    wroteLastEntry = true;
+                    finish();
                 });
             };
             if (url.startsWith('file:')) {
