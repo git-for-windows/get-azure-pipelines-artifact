@@ -78,6 +78,8 @@ export async function unzip(
             process.stderr.write(
               `warning: skipping ${entry.path} because it does not start with ${stripPrefix}\n`
             )
+            entry.autodrain()
+            return
           }
           const entryPath = `${outputDirectory}/${entry.path.substring(
             stripPrefix.length
