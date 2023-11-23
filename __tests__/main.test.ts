@@ -45,6 +45,8 @@ if (process.env.RUN_NETWORK_TESTS !== 'true') {
         env: {
           INPUT_REPOSITORY: 'git/git',
           INPUT_DEFINITIONID: '10',
+          INPUT_ARTIFACT: 'sparse-20.04',
+          INPUT_PATH: '.',
           INPUT_VERBOSE: 'true',
           INPUT_CACHE: 'true'
         }
