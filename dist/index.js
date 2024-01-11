@@ -620,7 +620,8 @@ function createHttpClient() {
     return new http_client_1.HttpClient('actions/cache', [bearerCredentialHandler], getRequestOptions());
 }
 function getCacheVersion(paths, compressionMethod, enableCrossOsArchive = false) {
-    const components = paths;
+    // don't pass changes upstream
+    const components = paths.slice();
     // Add compression method to cache version to restore
     // compressed cache as per compression method
     if (compressionMethod) {
@@ -909,26 +910,21 @@ function resolvePaths(patterns) {
             implicitDescendants: false
         });
         try {
-            for (var _e = true, _f = __asyncValues(globber.globGenerator()), _g; _g = yield _f.next(), _a = _g.done, !_a;) {
+            for (var _e = true, _f = __asyncValues(globber.globGenerator()), _g; _g = yield _f.next(), _a = _g.done, !_a; _e = true) {
                 _c = _g.value;
                 _e = false;
-                try {
-                    const file = _c;
-                    const relativeFile = path
-                        .relative(workspace, file)
-                        .replace(new RegExp(`\\${path.sep}`, 'g'), '/');
-                    core.debug(`Matched: ${relativeFile}`);
-                    // Paths are made relative so the tar entries are all relative to the root of the workspace.
-                    if (relativeFile === '') {
-                        // path.relative returns empty string if workspace and file are equal
-                        paths.push('.');
-                    }
-                    else {
-                        paths.push(`${relativeFile}`);
-                    }
+                const file = _c;
+                const relativeFile = path
+                    .relative(workspace, file)
+                    .replace(new RegExp(`\\${path.sep}`, 'g'), '/');
+                core.debug(`Matched: ${relativeFile}`);
+                // Paths are made relative so the tar entries are all relative to the root of the workspace.
+                if (relativeFile === '') {
+                    // path.relative returns empty string if workspace and file are equal
+                    paths.push('.');
                 }
-                finally {
-                    _e = true;
+                else {
+                    paths.push(`${relativeFile}`);
                 }
             }
         }
@@ -1030,7 +1026,7 @@ var CacheFilename;
 (function (CacheFilename) {
     CacheFilename["Gzip"] = "cache.tgz";
     CacheFilename["Zstd"] = "cache.tzst";
-})(CacheFilename = exports.CacheFilename || (exports.CacheFilename = {}));
+})(CacheFilename || (exports.CacheFilename = CacheFilename = {}));
 var CompressionMethod;
 (function (CompressionMethod) {
     CompressionMethod["Gzip"] = "gzip";
@@ -1038,12 +1034,12 @@ var CompressionMethod;
     // This enum is for earlier version of zstd that does not have --long support
     CompressionMethod["ZstdWithoutLong"] = "zstd-without-long";
     CompressionMethod["Zstd"] = "zstd";
-})(CompressionMethod = exports.CompressionMethod || (exports.CompressionMethod = {}));
+})(CompressionMethod || (exports.CompressionMethod = CompressionMethod = {}));
 var ArchiveToolType;
 (function (ArchiveToolType) {
     ArchiveToolType["GNU"] = "gnu";
     ArchiveToolType["BSD"] = "bsd";
-})(ArchiveToolType = exports.ArchiveToolType || (exports.ArchiveToolType = {}));
+})(ArchiveToolType || (exports.ArchiveToolType = ArchiveToolType = {}));
 // The default number of retry attempts.
 exports.DefaultRetryAttempts = 2;
 // The default delay in milliseconds between retry attempts.
