@@ -242,8 +242,8 @@ function unzip(url, bytesToExtract, stripPrefix, outputDirectory, verbose, store
     });
 }
 exports.unzip = unzip;
-function get(repository, definitionId, artifactName, stripPrefix, reasonFilter = 'all') {
-    return __awaiter(this, void 0, void 0, function* () {
+function get(repository_1, definitionId_1, artifactName_1, stripPrefix_1) {
+    return __awaiter(this, arguments, void 0, function* (repository, definitionId, artifactName, stripPrefix, reasonFilter = 'all') {
         if (!repository || !definitionId) {
             throw new Error(`Need repository and definitionId (got ${repository} and ${definitionId})`);
         }
@@ -277,7 +277,7 @@ function get(repository, definitionId, artifactName, stripPrefix, reasonFilter =
         if (!stripPrefix) {
             stripPrefix = `${artifactName}/`;
         }
-        const download = (outputDirectory, verbose = false, storeZipAs) => __awaiter(this, void 0, void 0, function* () {
+        const download = (outputDirectory_1, ...args_1) => __awaiter(this, [outputDirectory_1, ...args_1], void 0, function* (outputDirectory, verbose = false, storeZipAs) {
             let delayInSeconds = 1;
             for (;;) {
                 try {
