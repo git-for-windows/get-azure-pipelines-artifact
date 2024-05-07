@@ -71870,7 +71870,13 @@ module.exports = function centralDirectory(source, options) {
           vars.comment = comment;
           vars.type = (vars.uncompressedSize === 0 && /[\/\\]$/.test(vars.path)) ? 'Directory' : 'File';
           vars.stream = function(_password) {
-            return unzip(source, vars.offsetToLocalFileHeader,_password, vars);
+            var totalSize = 30
+              + 10 // add an extra buffer
+              + (vars.extraFieldLength || 0) 
+              + (vars.fileNameLength || 0)
+              + vars.compressedSize;
+
+            return unzip(source, vars.offsetToLocalFileHeader,_password, vars, totalSize);
           };
           vars.buffer = function(_password) {
             return BufferStream(vars.stream(_password));
@@ -71900,7 +71906,8 @@ module.exports = {
     var source = {
       stream: function(offset, length) {
         var stream = Stream.PassThrough();
-        stream.end(buffer.slice(offset, length));
+        var end = length ? offset + length : undefined;
+        stream.end(buffer.slice(offset, end));
         return stream;
       },
       size: function() {
@@ -71911,8 +71918,9 @@ module.exports = {
   },
   file: function(filename, options) {
     var source = {
-      stream: function(offset,length) {
-        return fs.createReadStream(filename,{start: offset, end: length && offset+length});
+      stream: function(start,length) {
+        var end = length ? start + length : undefined;
+        return fs.createReadStream(filename,{start, end});
       },
       size: function() {
         return new Promise(function(resolve,reject) {
@@ -71938,8 +71946,9 @@ module.exports = {
     var source = {
       stream : function(offset,length) {
         var options = Object.create(params);
+        var end = length ? offset + length : '';
         options.headers = Object.create(params.headers);
-        options.headers.range = 'bytes='+offset+'-' + (length ? length : '');
+        options.headers.range = 'bytes='+offset+'-' + end;
         return request(options);
       },
       size: function() {
@@ -71975,7 +71984,8 @@ module.exports = {
         var d = {};
         for (var key in params)
           d[key] = params[key];
-        d.Range = 'bytes='+offset+'-' + (length ? length : '');
+        var end = length ? offset + length : '';
+        d.Range = 'bytes='+offset+'-' + end;
         return client.getObject(d).createReadStream();
       }
     };
@@ -72003,11 +72013,11 @@ var parseExtraField = __nccwpck_require__(5120);
 var parseDateTime = __nccwpck_require__(5734);
 var parseBuffer = __nccwpck_require__(1406);
 
-module.exports = function unzip(source,offset,_password, directoryVars) {
+module.exports = function unzip(source, offset, _password, directoryVars, length) {
   var file = PullStream(),
       entry = Stream.PassThrough();
 
-  var req = source.stream(offset);
+  var req = source.stream(offset, length);
   req.pipe(file).on('error', function(e) {
     entry.emit('error', e);
   });
@@ -72170,7 +72180,7 @@ PullStream.prototype.stream = function(eof,includeEof) {
         packet = self.buffer.slice(0,eof);
         self.buffer = self.buffer.slice(eof);
         eof -= packet.length;
-        done = !eof;
+        done = done || !eof;
       } else {
         var match = self.buffer.indexOf(eof);
         if (match !== -1) {
