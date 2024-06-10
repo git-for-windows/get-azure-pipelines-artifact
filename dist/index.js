@@ -45158,1467 +45158,6 @@ function range(a, b, str) {
 
 /***/ }),
 
-/***/ 1575:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-/* module decorator */ module = __nccwpck_require__.nmd(module);
-var bigInt = (function (undefined) {
-    "use strict";
-
-    var BASE = 1e7,
-        LOG_BASE = 7,
-        MAX_INT = 9007199254740992,
-        MAX_INT_ARR = smallToArray(MAX_INT),
-        DEFAULT_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
-
-    var supportsNativeBigInt = typeof BigInt === "function";
-
-    function Integer(v, radix, alphabet, caseSensitive) {
-        if (typeof v === "undefined") return Integer[0];
-        if (typeof radix !== "undefined") return +radix === 10 && !alphabet ? parseValue(v) : parseBase(v, radix, alphabet, caseSensitive);
-        return parseValue(v);
-    }
-
-    function BigInteger(value, sign) {
-        this.value = value;
-        this.sign = sign;
-        this.isSmall = false;
-    }
-    BigInteger.prototype = Object.create(Integer.prototype);
-
-    function SmallInteger(value) {
-        this.value = value;
-        this.sign = value < 0;
-        this.isSmall = true;
-    }
-    SmallInteger.prototype = Object.create(Integer.prototype);
-
-    function NativeBigInt(value) {
-        this.value = value;
-    }
-    NativeBigInt.prototype = Object.create(Integer.prototype);
-
-    function isPrecise(n) {
-        return -MAX_INT < n && n < MAX_INT;
-    }
-
-    function smallToArray(n) { // For performance reasons doesn't reference BASE, need to change this function if BASE changes
-        if (n < 1e7)
-            return [n];
-        if (n < 1e14)
-            return [n % 1e7, Math.floor(n / 1e7)];
-        return [n % 1e7, Math.floor(n / 1e7) % 1e7, Math.floor(n / 1e14)];
-    }
-
-    function arrayToSmall(arr) { // If BASE changes this function may need to change
-        trim(arr);
-        var length = arr.length;
-        if (length < 4 && compareAbs(arr, MAX_INT_ARR) < 0) {
-            switch (length) {
-                case 0: return 0;
-                case 1: return arr[0];
-                case 2: return arr[0] + arr[1] * BASE;
-                default: return arr[0] + (arr[1] + arr[2] * BASE) * BASE;
-            }
-        }
-        return arr;
-    }
-
-    function trim(v) {
-        var i = v.length;
-        while (v[--i] === 0);
-        v.length = i + 1;
-    }
-
-    function createArray(length) { // function shamelessly stolen from Yaffle's library https://github.com/Yaffle/BigInteger
-        var x = new Array(length);
-        var i = -1;
-        while (++i < length) {
-            x[i] = 0;
-        }
-        return x;
-    }
-
-    function truncate(n) {
-        if (n > 0) return Math.floor(n);
-        return Math.ceil(n);
-    }
-
-    function add(a, b) { // assumes a and b are arrays with a.length >= b.length
-        var l_a = a.length,
-            l_b = b.length,
-            r = new Array(l_a),
-            carry = 0,
-            base = BASE,
-            sum, i;
-        for (i = 0; i < l_b; i++) {
-            sum = a[i] + b[i] + carry;
-            carry = sum >= base ? 1 : 0;
-            r[i] = sum - carry * base;
-        }
-        while (i < l_a) {
-            sum = a[i] + carry;
-            carry = sum === base ? 1 : 0;
-            r[i++] = sum - carry * base;
-        }
-        if (carry > 0) r.push(carry);
-        return r;
-    }
-
-    function addAny(a, b) {
-        if (a.length >= b.length) return add(a, b);
-        return add(b, a);
-    }
-
-    function addSmall(a, carry) { // assumes a is array, carry is number with 0 <= carry < MAX_INT
-        var l = a.length,
-            r = new Array(l),
-            base = BASE,
-            sum, i;
-        for (i = 0; i < l; i++) {
-            sum = a[i] - base + carry;
-            carry = Math.floor(sum / base);
-            r[i] = sum - carry * base;
-            carry += 1;
-        }
-        while (carry > 0) {
-            r[i++] = carry % base;
-            carry = Math.floor(carry / base);
-        }
-        return r;
-    }
-
-    BigInteger.prototype.add = function (v) {
-        var n = parseValue(v);
-        if (this.sign !== n.sign) {
-            return this.subtract(n.negate());
-        }
-        var a = this.value, b = n.value;
-        if (n.isSmall) {
-            return new BigInteger(addSmall(a, Math.abs(b)), this.sign);
-        }
-        return new BigInteger(addAny(a, b), this.sign);
-    };
-    BigInteger.prototype.plus = BigInteger.prototype.add;
-
-    SmallInteger.prototype.add = function (v) {
-        var n = parseValue(v);
-        var a = this.value;
-        if (a < 0 !== n.sign) {
-            return this.subtract(n.negate());
-        }
-        var b = n.value;
-        if (n.isSmall) {
-            if (isPrecise(a + b)) return new SmallInteger(a + b);
-            b = smallToArray(Math.abs(b));
-        }
-        return new BigInteger(addSmall(b, Math.abs(a)), a < 0);
-    };
-    SmallInteger.prototype.plus = SmallInteger.prototype.add;
-
-    NativeBigInt.prototype.add = function (v) {
-        return new NativeBigInt(this.value + parseValue(v).value);
-    }
-    NativeBigInt.prototype.plus = NativeBigInt.prototype.add;
-
-    function subtract(a, b) { // assumes a and b are arrays with a >= b
-        var a_l = a.length,
-            b_l = b.length,
-            r = new Array(a_l),
-            borrow = 0,
-            base = BASE,
-            i, difference;
-        for (i = 0; i < b_l; i++) {
-            difference = a[i] - borrow - b[i];
-            if (difference < 0) {
-                difference += base;
-                borrow = 1;
-            } else borrow = 0;
-            r[i] = difference;
-        }
-        for (i = b_l; i < a_l; i++) {
-            difference = a[i] - borrow;
-            if (difference < 0) difference += base;
-            else {
-                r[i++] = difference;
-                break;
-            }
-            r[i] = difference;
-        }
-        for (; i < a_l; i++) {
-            r[i] = a[i];
-        }
-        trim(r);
-        return r;
-    }
-
-    function subtractAny(a, b, sign) {
-        var value;
-        if (compareAbs(a, b) >= 0) {
-            value = subtract(a, b);
-        } else {
-            value = subtract(b, a);
-            sign = !sign;
-        }
-        value = arrayToSmall(value);
-        if (typeof value === "number") {
-            if (sign) value = -value;
-            return new SmallInteger(value);
-        }
-        return new BigInteger(value, sign);
-    }
-
-    function subtractSmall(a, b, sign) { // assumes a is array, b is number with 0 <= b < MAX_INT
-        var l = a.length,
-            r = new Array(l),
-            carry = -b,
-            base = BASE,
-            i, difference;
-        for (i = 0; i < l; i++) {
-            difference = a[i] + carry;
-            carry = Math.floor(difference / base);
-            difference %= base;
-            r[i] = difference < 0 ? difference + base : difference;
-        }
-        r = arrayToSmall(r);
-        if (typeof r === "number") {
-            if (sign) r = -r;
-            return new SmallInteger(r);
-        } return new BigInteger(r, sign);
-    }
-
-    BigInteger.prototype.subtract = function (v) {
-        var n = parseValue(v);
-        if (this.sign !== n.sign) {
-            return this.add(n.negate());
-        }
-        var a = this.value, b = n.value;
-        if (n.isSmall)
-            return subtractSmall(a, Math.abs(b), this.sign);
-        return subtractAny(a, b, this.sign);
-    };
-    BigInteger.prototype.minus = BigInteger.prototype.subtract;
-
-    SmallInteger.prototype.subtract = function (v) {
-        var n = parseValue(v);
-        var a = this.value;
-        if (a < 0 !== n.sign) {
-            return this.add(n.negate());
-        }
-        var b = n.value;
-        if (n.isSmall) {
-            return new SmallInteger(a - b);
-        }
-        return subtractSmall(b, Math.abs(a), a >= 0);
-    };
-    SmallInteger.prototype.minus = SmallInteger.prototype.subtract;
-
-    NativeBigInt.prototype.subtract = function (v) {
-        return new NativeBigInt(this.value - parseValue(v).value);
-    }
-    NativeBigInt.prototype.minus = NativeBigInt.prototype.subtract;
-
-    BigInteger.prototype.negate = function () {
-        return new BigInteger(this.value, !this.sign);
-    };
-    SmallInteger.prototype.negate = function () {
-        var sign = this.sign;
-        var small = new SmallInteger(-this.value);
-        small.sign = !sign;
-        return small;
-    };
-    NativeBigInt.prototype.negate = function () {
-        return new NativeBigInt(-this.value);
-    }
-
-    BigInteger.prototype.abs = function () {
-        return new BigInteger(this.value, false);
-    };
-    SmallInteger.prototype.abs = function () {
-        return new SmallInteger(Math.abs(this.value));
-    };
-    NativeBigInt.prototype.abs = function () {
-        return new NativeBigInt(this.value >= 0 ? this.value : -this.value);
-    }
-
-
-    function multiplyLong(a, b) {
-        var a_l = a.length,
-            b_l = b.length,
-            l = a_l + b_l,
-            r = createArray(l),
-            base = BASE,
-            product, carry, i, a_i, b_j;
-        for (i = 0; i < a_l; ++i) {
-            a_i = a[i];
-            for (var j = 0; j < b_l; ++j) {
-                b_j = b[j];
-                product = a_i * b_j + r[i + j];
-                carry = Math.floor(product / base);
-                r[i + j] = product - carry * base;
-                r[i + j + 1] += carry;
-            }
-        }
-        trim(r);
-        return r;
-    }
-
-    function multiplySmall(a, b) { // assumes a is array, b is number with |b| < BASE
-        var l = a.length,
-            r = new Array(l),
-            base = BASE,
-            carry = 0,
-            product, i;
-        for (i = 0; i < l; i++) {
-            product = a[i] * b + carry;
-            carry = Math.floor(product / base);
-            r[i] = product - carry * base;
-        }
-        while (carry > 0) {
-            r[i++] = carry % base;
-            carry = Math.floor(carry / base);
-        }
-        return r;
-    }
-
-    function shiftLeft(x, n) {
-        var r = [];
-        while (n-- > 0) r.push(0);
-        return r.concat(x);
-    }
-
-    function multiplyKaratsuba(x, y) {
-        var n = Math.max(x.length, y.length);
-
-        if (n <= 30) return multiplyLong(x, y);
-        n = Math.ceil(n / 2);
-
-        var b = x.slice(n),
-            a = x.slice(0, n),
-            d = y.slice(n),
-            c = y.slice(0, n);
-
-        var ac = multiplyKaratsuba(a, c),
-            bd = multiplyKaratsuba(b, d),
-            abcd = multiplyKaratsuba(addAny(a, b), addAny(c, d));
-
-        var product = addAny(addAny(ac, shiftLeft(subtract(subtract(abcd, ac), bd), n)), shiftLeft(bd, 2 * n));
-        trim(product);
-        return product;
-    }
-
-    // The following function is derived from a surface fit of a graph plotting the performance difference
-    // between long multiplication and karatsuba multiplication versus the lengths of the two arrays.
-    function useKaratsuba(l1, l2) {
-        return -0.012 * l1 - 0.012 * l2 + 0.000015 * l1 * l2 > 0;
-    }
-
-    BigInteger.prototype.multiply = function (v) {
-        var n = parseValue(v),
-            a = this.value, b = n.value,
-            sign = this.sign !== n.sign,
-            abs;
-        if (n.isSmall) {
-            if (b === 0) return Integer[0];
-            if (b === 1) return this;
-            if (b === -1) return this.negate();
-            abs = Math.abs(b);
-            if (abs < BASE) {
-                return new BigInteger(multiplySmall(a, abs), sign);
-            }
-            b = smallToArray(abs);
-        }
-        if (useKaratsuba(a.length, b.length)) // Karatsuba is only faster for certain array sizes
-            return new BigInteger(multiplyKaratsuba(a, b), sign);
-        return new BigInteger(multiplyLong(a, b), sign);
-    };
-
-    BigInteger.prototype.times = BigInteger.prototype.multiply;
-
-    function multiplySmallAndArray(a, b, sign) { // a >= 0
-        if (a < BASE) {
-            return new BigInteger(multiplySmall(b, a), sign);
-        }
-        return new BigInteger(multiplyLong(b, smallToArray(a)), sign);
-    }
-    SmallInteger.prototype._multiplyBySmall = function (a) {
-        if (isPrecise(a.value * this.value)) {
-            return new SmallInteger(a.value * this.value);
-        }
-        return multiplySmallAndArray(Math.abs(a.value), smallToArray(Math.abs(this.value)), this.sign !== a.sign);
-    };
-    BigInteger.prototype._multiplyBySmall = function (a) {
-        if (a.value === 0) return Integer[0];
-        if (a.value === 1) return this;
-        if (a.value === -1) return this.negate();
-        return multiplySmallAndArray(Math.abs(a.value), this.value, this.sign !== a.sign);
-    };
-    SmallInteger.prototype.multiply = function (v) {
-        return parseValue(v)._multiplyBySmall(this);
-    };
-    SmallInteger.prototype.times = SmallInteger.prototype.multiply;
-
-    NativeBigInt.prototype.multiply = function (v) {
-        return new NativeBigInt(this.value * parseValue(v).value);
-    }
-    NativeBigInt.prototype.times = NativeBigInt.prototype.multiply;
-
-    function square(a) {
-        //console.assert(2 * BASE * BASE < MAX_INT);
-        var l = a.length,
-            r = createArray(l + l),
-            base = BASE,
-            product, carry, i, a_i, a_j;
-        for (i = 0; i < l; i++) {
-            a_i = a[i];
-            carry = 0 - a_i * a_i;
-            for (var j = i; j < l; j++) {
-                a_j = a[j];
-                product = 2 * (a_i * a_j) + r[i + j] + carry;
-                carry = Math.floor(product / base);
-                r[i + j] = product - carry * base;
-            }
-            r[i + l] = carry;
-        }
-        trim(r);
-        return r;
-    }
-
-    BigInteger.prototype.square = function () {
-        return new BigInteger(square(this.value), false);
-    };
-
-    SmallInteger.prototype.square = function () {
-        var value = this.value * this.value;
-        if (isPrecise(value)) return new SmallInteger(value);
-        return new BigInteger(square(smallToArray(Math.abs(this.value))), false);
-    };
-
-    NativeBigInt.prototype.square = function (v) {
-        return new NativeBigInt(this.value * this.value);
-    }
-
-    function divMod1(a, b) { // Left over from previous version. Performs faster than divMod2 on smaller input sizes.
-        var a_l = a.length,
-            b_l = b.length,
-            base = BASE,
-            result = createArray(b.length),
-            divisorMostSignificantDigit = b[b_l - 1],
-            // normalization
-            lambda = Math.ceil(base / (2 * divisorMostSignificantDigit)),
-            remainder = multiplySmall(a, lambda),
-            divisor = multiplySmall(b, lambda),
-            quotientDigit, shift, carry, borrow, i, l, q;
-        if (remainder.length <= a_l) remainder.push(0);
-        divisor.push(0);
-        divisorMostSignificantDigit = divisor[b_l - 1];
-        for (shift = a_l - b_l; shift >= 0; shift--) {
-            quotientDigit = base - 1;
-            if (remainder[shift + b_l] !== divisorMostSignificantDigit) {
-                quotientDigit = Math.floor((remainder[shift + b_l] * base + remainder[shift + b_l - 1]) / divisorMostSignificantDigit);
-            }
-            // quotientDigit <= base - 1
-            carry = 0;
-            borrow = 0;
-            l = divisor.length;
-            for (i = 0; i < l; i++) {
-                carry += quotientDigit * divisor[i];
-                q = Math.floor(carry / base);
-                borrow += remainder[shift + i] - (carry - q * base);
-                carry = q;
-                if (borrow < 0) {
-                    remainder[shift + i] = borrow + base;
-                    borrow = -1;
-                } else {
-                    remainder[shift + i] = borrow;
-                    borrow = 0;
-                }
-            }
-            while (borrow !== 0) {
-                quotientDigit -= 1;
-                carry = 0;
-                for (i = 0; i < l; i++) {
-                    carry += remainder[shift + i] - base + divisor[i];
-                    if (carry < 0) {
-                        remainder[shift + i] = carry + base;
-                        carry = 0;
-                    } else {
-                        remainder[shift + i] = carry;
-                        carry = 1;
-                    }
-                }
-                borrow += carry;
-            }
-            result[shift] = quotientDigit;
-        }
-        // denormalization
-        remainder = divModSmall(remainder, lambda)[0];
-        return [arrayToSmall(result), arrayToSmall(remainder)];
-    }
-
-    function divMod2(a, b) { // Implementation idea shamelessly stolen from Silent Matt's library http://silentmatt.com/biginteger/
-        // Performs faster than divMod1 on larger input sizes.
-        var a_l = a.length,
-            b_l = b.length,
-            result = [],
-            part = [],
-            base = BASE,
-            guess, xlen, highx, highy, check;
-        while (a_l) {
-            part.unshift(a[--a_l]);
-            trim(part);
-            if (compareAbs(part, b) < 0) {
-                result.push(0);
-                continue;
-            }
-            xlen = part.length;
-            highx = part[xlen - 1] * base + part[xlen - 2];
-            highy = b[b_l - 1] * base + b[b_l - 2];
-            if (xlen > b_l) {
-                highx = (highx + 1) * base;
-            }
-            guess = Math.ceil(highx / highy);
-            do {
-                check = multiplySmall(b, guess);
-                if (compareAbs(check, part) <= 0) break;
-                guess--;
-            } while (guess);
-            result.push(guess);
-            part = subtract(part, check);
-        }
-        result.reverse();
-        return [arrayToSmall(result), arrayToSmall(part)];
-    }
-
-    function divModSmall(value, lambda) {
-        var length = value.length,
-            quotient = createArray(length),
-            base = BASE,
-            i, q, remainder, divisor;
-        remainder = 0;
-        for (i = length - 1; i >= 0; --i) {
-            divisor = remainder * base + value[i];
-            q = truncate(divisor / lambda);
-            remainder = divisor - q * lambda;
-            quotient[i] = q | 0;
-        }
-        return [quotient, remainder | 0];
-    }
-
-    function divModAny(self, v) {
-        var value, n = parseValue(v);
-        if (supportsNativeBigInt) {
-            return [new NativeBigInt(self.value / n.value), new NativeBigInt(self.value % n.value)];
-        }
-        var a = self.value, b = n.value;
-        var quotient;
-        if (b === 0) throw new Error("Cannot divide by zero");
-        if (self.isSmall) {
-            if (n.isSmall) {
-                return [new SmallInteger(truncate(a / b)), new SmallInteger(a % b)];
-            }
-            return [Integer[0], self];
-        }
-        if (n.isSmall) {
-            if (b === 1) return [self, Integer[0]];
-            if (b == -1) return [self.negate(), Integer[0]];
-            var abs = Math.abs(b);
-            if (abs < BASE) {
-                value = divModSmall(a, abs);
-                quotient = arrayToSmall(value[0]);
-                var remainder = value[1];
-                if (self.sign) remainder = -remainder;
-                if (typeof quotient === "number") {
-                    if (self.sign !== n.sign) quotient = -quotient;
-                    return [new SmallInteger(quotient), new SmallInteger(remainder)];
-                }
-                return [new BigInteger(quotient, self.sign !== n.sign), new SmallInteger(remainder)];
-            }
-            b = smallToArray(abs);
-        }
-        var comparison = compareAbs(a, b);
-        if (comparison === -1) return [Integer[0], self];
-        if (comparison === 0) return [Integer[self.sign === n.sign ? 1 : -1], Integer[0]];
-
-        // divMod1 is faster on smaller input sizes
-        if (a.length + b.length <= 200)
-            value = divMod1(a, b);
-        else value = divMod2(a, b);
-
-        quotient = value[0];
-        var qSign = self.sign !== n.sign,
-            mod = value[1],
-            mSign = self.sign;
-        if (typeof quotient === "number") {
-            if (qSign) quotient = -quotient;
-            quotient = new SmallInteger(quotient);
-        } else quotient = new BigInteger(quotient, qSign);
-        if (typeof mod === "number") {
-            if (mSign) mod = -mod;
-            mod = new SmallInteger(mod);
-        } else mod = new BigInteger(mod, mSign);
-        return [quotient, mod];
-    }
-
-    BigInteger.prototype.divmod = function (v) {
-        var result = divModAny(this, v);
-        return {
-            quotient: result[0],
-            remainder: result[1]
-        };
-    };
-    NativeBigInt.prototype.divmod = SmallInteger.prototype.divmod = BigInteger.prototype.divmod;
-
-
-    BigInteger.prototype.divide = function (v) {
-        return divModAny(this, v)[0];
-    };
-    NativeBigInt.prototype.over = NativeBigInt.prototype.divide = function (v) {
-        return new NativeBigInt(this.value / parseValue(v).value);
-    };
-    SmallInteger.prototype.over = SmallInteger.prototype.divide = BigInteger.prototype.over = BigInteger.prototype.divide;
-
-    BigInteger.prototype.mod = function (v) {
-        return divModAny(this, v)[1];
-    };
-    NativeBigInt.prototype.mod = NativeBigInt.prototype.remainder = function (v) {
-        return new NativeBigInt(this.value % parseValue(v).value);
-    };
-    SmallInteger.prototype.remainder = SmallInteger.prototype.mod = BigInteger.prototype.remainder = BigInteger.prototype.mod;
-
-    BigInteger.prototype.pow = function (v) {
-        var n = parseValue(v),
-            a = this.value,
-            b = n.value,
-            value, x, y;
-        if (b === 0) return Integer[1];
-        if (a === 0) return Integer[0];
-        if (a === 1) return Integer[1];
-        if (a === -1) return n.isEven() ? Integer[1] : Integer[-1];
-        if (n.sign) {
-            return Integer[0];
-        }
-        if (!n.isSmall) throw new Error("The exponent " + n.toString() + " is too large.");
-        if (this.isSmall) {
-            if (isPrecise(value = Math.pow(a, b)))
-                return new SmallInteger(truncate(value));
-        }
-        x = this;
-        y = Integer[1];
-        while (true) {
-            if (b & 1 === 1) {
-                y = y.times(x);
-                --b;
-            }
-            if (b === 0) break;
-            b /= 2;
-            x = x.square();
-        }
-        return y;
-    };
-    SmallInteger.prototype.pow = BigInteger.prototype.pow;
-
-    NativeBigInt.prototype.pow = function (v) {
-        var n = parseValue(v);
-        var a = this.value, b = n.value;
-        var _0 = BigInt(0), _1 = BigInt(1), _2 = BigInt(2);
-        if (b === _0) return Integer[1];
-        if (a === _0) return Integer[0];
-        if (a === _1) return Integer[1];
-        if (a === BigInt(-1)) return n.isEven() ? Integer[1] : Integer[-1];
-        if (n.isNegative()) return new NativeBigInt(_0);
-        var x = this;
-        var y = Integer[1];
-        while (true) {
-            if ((b & _1) === _1) {
-                y = y.times(x);
-                --b;
-            }
-            if (b === _0) break;
-            b /= _2;
-            x = x.square();
-        }
-        return y;
-    }
-
-    BigInteger.prototype.modPow = function (exp, mod) {
-        exp = parseValue(exp);
-        mod = parseValue(mod);
-        if (mod.isZero()) throw new Error("Cannot take modPow with modulus 0");
-        var r = Integer[1],
-            base = this.mod(mod);
-        if (exp.isNegative()) {
-            exp = exp.multiply(Integer[-1]);
-            base = base.modInv(mod);
-        }
-        while (exp.isPositive()) {
-            if (base.isZero()) return Integer[0];
-            if (exp.isOdd()) r = r.multiply(base).mod(mod);
-            exp = exp.divide(2);
-            base = base.square().mod(mod);
-        }
-        return r;
-    };
-    NativeBigInt.prototype.modPow = SmallInteger.prototype.modPow = BigInteger.prototype.modPow;
-
-    function compareAbs(a, b) {
-        if (a.length !== b.length) {
-            return a.length > b.length ? 1 : -1;
-        }
-        for (var i = a.length - 1; i >= 0; i--) {
-            if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1;
-        }
-        return 0;
-    }
-
-    BigInteger.prototype.compareAbs = function (v) {
-        var n = parseValue(v),
-            a = this.value,
-            b = n.value;
-        if (n.isSmall) return 1;
-        return compareAbs(a, b);
-    };
-    SmallInteger.prototype.compareAbs = function (v) {
-        var n = parseValue(v),
-            a = Math.abs(this.value),
-            b = n.value;
-        if (n.isSmall) {
-            b = Math.abs(b);
-            return a === b ? 0 : a > b ? 1 : -1;
-        }
-        return -1;
-    };
-    NativeBigInt.prototype.compareAbs = function (v) {
-        var a = this.value;
-        var b = parseValue(v).value;
-        a = a >= 0 ? a : -a;
-        b = b >= 0 ? b : -b;
-        return a === b ? 0 : a > b ? 1 : -1;
-    }
-
-    BigInteger.prototype.compare = function (v) {
-        // See discussion about comparison with Infinity:
-        // https://github.com/peterolson/BigInteger.js/issues/61
-        if (v === Infinity) {
-            return -1;
-        }
-        if (v === -Infinity) {
-            return 1;
-        }
-
-        var n = parseValue(v),
-            a = this.value,
-            b = n.value;
-        if (this.sign !== n.sign) {
-            return n.sign ? 1 : -1;
-        }
-        if (n.isSmall) {
-            return this.sign ? -1 : 1;
-        }
-        return compareAbs(a, b) * (this.sign ? -1 : 1);
-    };
-    BigInteger.prototype.compareTo = BigInteger.prototype.compare;
-
-    SmallInteger.prototype.compare = function (v) {
-        if (v === Infinity) {
-            return -1;
-        }
-        if (v === -Infinity) {
-            return 1;
-        }
-
-        var n = parseValue(v),
-            a = this.value,
-            b = n.value;
-        if (n.isSmall) {
-            return a == b ? 0 : a > b ? 1 : -1;
-        }
-        if (a < 0 !== n.sign) {
-            return a < 0 ? -1 : 1;
-        }
-        return a < 0 ? 1 : -1;
-    };
-    SmallInteger.prototype.compareTo = SmallInteger.prototype.compare;
-
-    NativeBigInt.prototype.compare = function (v) {
-        if (v === Infinity) {
-            return -1;
-        }
-        if (v === -Infinity) {
-            return 1;
-        }
-        var a = this.value;
-        var b = parseValue(v).value;
-        return a === b ? 0 : a > b ? 1 : -1;
-    }
-    NativeBigInt.prototype.compareTo = NativeBigInt.prototype.compare;
-
-    BigInteger.prototype.equals = function (v) {
-        return this.compare(v) === 0;
-    };
-    NativeBigInt.prototype.eq = NativeBigInt.prototype.equals = SmallInteger.prototype.eq = SmallInteger.prototype.equals = BigInteger.prototype.eq = BigInteger.prototype.equals;
-
-    BigInteger.prototype.notEquals = function (v) {
-        return this.compare(v) !== 0;
-    };
-    NativeBigInt.prototype.neq = NativeBigInt.prototype.notEquals = SmallInteger.prototype.neq = SmallInteger.prototype.notEquals = BigInteger.prototype.neq = BigInteger.prototype.notEquals;
-
-    BigInteger.prototype.greater = function (v) {
-        return this.compare(v) > 0;
-    };
-    NativeBigInt.prototype.gt = NativeBigInt.prototype.greater = SmallInteger.prototype.gt = SmallInteger.prototype.greater = BigInteger.prototype.gt = BigInteger.prototype.greater;
-
-    BigInteger.prototype.lesser = function (v) {
-        return this.compare(v) < 0;
-    };
-    NativeBigInt.prototype.lt = NativeBigInt.prototype.lesser = SmallInteger.prototype.lt = SmallInteger.prototype.lesser = BigInteger.prototype.lt = BigInteger.prototype.lesser;
-
-    BigInteger.prototype.greaterOrEquals = function (v) {
-        return this.compare(v) >= 0;
-    };
-    NativeBigInt.prototype.geq = NativeBigInt.prototype.greaterOrEquals = SmallInteger.prototype.geq = SmallInteger.prototype.greaterOrEquals = BigInteger.prototype.geq = BigInteger.prototype.greaterOrEquals;
-
-    BigInteger.prototype.lesserOrEquals = function (v) {
-        return this.compare(v) <= 0;
-    };
-    NativeBigInt.prototype.leq = NativeBigInt.prototype.lesserOrEquals = SmallInteger.prototype.leq = SmallInteger.prototype.lesserOrEquals = BigInteger.prototype.leq = BigInteger.prototype.lesserOrEquals;
-
-    BigInteger.prototype.isEven = function () {
-        return (this.value[0] & 1) === 0;
-    };
-    SmallInteger.prototype.isEven = function () {
-        return (this.value & 1) === 0;
-    };
-    NativeBigInt.prototype.isEven = function () {
-        return (this.value & BigInt(1)) === BigInt(0);
-    }
-
-    BigInteger.prototype.isOdd = function () {
-        return (this.value[0] & 1) === 1;
-    };
-    SmallInteger.prototype.isOdd = function () {
-        return (this.value & 1) === 1;
-    };
-    NativeBigInt.prototype.isOdd = function () {
-        return (this.value & BigInt(1)) === BigInt(1);
-    }
-
-    BigInteger.prototype.isPositive = function () {
-        return !this.sign;
-    };
-    SmallInteger.prototype.isPositive = function () {
-        return this.value > 0;
-    };
-    NativeBigInt.prototype.isPositive = SmallInteger.prototype.isPositive;
-
-    BigInteger.prototype.isNegative = function () {
-        return this.sign;
-    };
-    SmallInteger.prototype.isNegative = function () {
-        return this.value < 0;
-    };
-    NativeBigInt.prototype.isNegative = SmallInteger.prototype.isNegative;
-
-    BigInteger.prototype.isUnit = function () {
-        return false;
-    };
-    SmallInteger.prototype.isUnit = function () {
-        return Math.abs(this.value) === 1;
-    };
-    NativeBigInt.prototype.isUnit = function () {
-        return this.abs().value === BigInt(1);
-    }
-
-    BigInteger.prototype.isZero = function () {
-        return false;
-    };
-    SmallInteger.prototype.isZero = function () {
-        return this.value === 0;
-    };
-    NativeBigInt.prototype.isZero = function () {
-        return this.value === BigInt(0);
-    }
-
-    BigInteger.prototype.isDivisibleBy = function (v) {
-        var n = parseValue(v);
-        if (n.isZero()) return false;
-        if (n.isUnit()) return true;
-        if (n.compareAbs(2) === 0) return this.isEven();
-        return this.mod(n).isZero();
-    };
-    NativeBigInt.prototype.isDivisibleBy = SmallInteger.prototype.isDivisibleBy = BigInteger.prototype.isDivisibleBy;
-
-    function isBasicPrime(v) {
-        var n = v.abs();
-        if (n.isUnit()) return false;
-        if (n.equals(2) || n.equals(3) || n.equals(5)) return true;
-        if (n.isEven() || n.isDivisibleBy(3) || n.isDivisibleBy(5)) return false;
-        if (n.lesser(49)) return true;
-        // we don't know if it's prime: let the other functions figure it out
-    }
-
-    function millerRabinTest(n, a) {
-        var nPrev = n.prev(),
-            b = nPrev,
-            r = 0,
-            d, t, i, x;
-        while (b.isEven()) b = b.divide(2), r++;
-        next: for (i = 0; i < a.length; i++) {
-            if (n.lesser(a[i])) continue;
-            x = bigInt(a[i]).modPow(b, n);
-            if (x.isUnit() || x.equals(nPrev)) continue;
-            for (d = r - 1; d != 0; d--) {
-                x = x.square().mod(n);
-                if (x.isUnit()) return false;
-                if (x.equals(nPrev)) continue next;
-            }
-            return false;
-        }
-        return true;
-    }
-
-    // Set "strict" to true to force GRH-supported lower bound of 2*log(N)^2
-    BigInteger.prototype.isPrime = function (strict) {
-        var isPrime = isBasicPrime(this);
-        if (isPrime !== undefined) return isPrime;
-        var n = this.abs();
-        var bits = n.bitLength();
-        if (bits <= 64)
-            return millerRabinTest(n, [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]);
-        var logN = Math.log(2) * bits.toJSNumber();
-        var t = Math.ceil((strict === true) ? (2 * Math.pow(logN, 2)) : logN);
-        for (var a = [], i = 0; i < t; i++) {
-            a.push(bigInt(i + 2));
-        }
-        return millerRabinTest(n, a);
-    };
-    NativeBigInt.prototype.isPrime = SmallInteger.prototype.isPrime = BigInteger.prototype.isPrime;
-
-    BigInteger.prototype.isProbablePrime = function (iterations, rng) {
-        var isPrime = isBasicPrime(this);
-        if (isPrime !== undefined) return isPrime;
-        var n = this.abs();
-        var t = iterations === undefined ? 5 : iterations;
-        for (var a = [], i = 0; i < t; i++) {
-            a.push(bigInt.randBetween(2, n.minus(2), rng));
-        }
-        return millerRabinTest(n, a);
-    };
-    NativeBigInt.prototype.isProbablePrime = SmallInteger.prototype.isProbablePrime = BigInteger.prototype.isProbablePrime;
-
-    BigInteger.prototype.modInv = function (n) {
-        var t = bigInt.zero, newT = bigInt.one, r = parseValue(n), newR = this.abs(), q, lastT, lastR;
-        while (!newR.isZero()) {
-            q = r.divide(newR);
-            lastT = t;
-            lastR = r;
-            t = newT;
-            r = newR;
-            newT = lastT.subtract(q.multiply(newT));
-            newR = lastR.subtract(q.multiply(newR));
-        }
-        if (!r.isUnit()) throw new Error(this.toString() + " and " + n.toString() + " are not co-prime");
-        if (t.compare(0) === -1) {
-            t = t.add(n);
-        }
-        if (this.isNegative()) {
-            return t.negate();
-        }
-        return t;
-    };
-
-    NativeBigInt.prototype.modInv = SmallInteger.prototype.modInv = BigInteger.prototype.modInv;
-
-    BigInteger.prototype.next = function () {
-        var value = this.value;
-        if (this.sign) {
-            return subtractSmall(value, 1, this.sign);
-        }
-        return new BigInteger(addSmall(value, 1), this.sign);
-    };
-    SmallInteger.prototype.next = function () {
-        var value = this.value;
-        if (value + 1 < MAX_INT) return new SmallInteger(value + 1);
-        return new BigInteger(MAX_INT_ARR, false);
-    };
-    NativeBigInt.prototype.next = function () {
-        return new NativeBigInt(this.value + BigInt(1));
-    }
-
-    BigInteger.prototype.prev = function () {
-        var value = this.value;
-        if (this.sign) {
-            return new BigInteger(addSmall(value, 1), true);
-        }
-        return subtractSmall(value, 1, this.sign);
-    };
-    SmallInteger.prototype.prev = function () {
-        var value = this.value;
-        if (value - 1 > -MAX_INT) return new SmallInteger(value - 1);
-        return new BigInteger(MAX_INT_ARR, true);
-    };
-    NativeBigInt.prototype.prev = function () {
-        return new NativeBigInt(this.value - BigInt(1));
-    }
-
-    var powersOfTwo = [1];
-    while (2 * powersOfTwo[powersOfTwo.length - 1] <= BASE) powersOfTwo.push(2 * powersOfTwo[powersOfTwo.length - 1]);
-    var powers2Length = powersOfTwo.length, highestPower2 = powersOfTwo[powers2Length - 1];
-
-    function shift_isSmall(n) {
-        return Math.abs(n) <= BASE;
-    }
-
-    BigInteger.prototype.shiftLeft = function (v) {
-        var n = parseValue(v).toJSNumber();
-        if (!shift_isSmall(n)) {
-            throw new Error(String(n) + " is too large for shifting.");
-        }
-        if (n < 0) return this.shiftRight(-n);
-        var result = this;
-        if (result.isZero()) return result;
-        while (n >= powers2Length) {
-            result = result.multiply(highestPower2);
-            n -= powers2Length - 1;
-        }
-        return result.multiply(powersOfTwo[n]);
-    };
-    NativeBigInt.prototype.shiftLeft = SmallInteger.prototype.shiftLeft = BigInteger.prototype.shiftLeft;
-
-    BigInteger.prototype.shiftRight = function (v) {
-        var remQuo;
-        var n = parseValue(v).toJSNumber();
-        if (!shift_isSmall(n)) {
-            throw new Error(String(n) + " is too large for shifting.");
-        }
-        if (n < 0) return this.shiftLeft(-n);
-        var result = this;
-        while (n >= powers2Length) {
-            if (result.isZero() || (result.isNegative() && result.isUnit())) return result;
-            remQuo = divModAny(result, highestPower2);
-            result = remQuo[1].isNegative() ? remQuo[0].prev() : remQuo[0];
-            n -= powers2Length - 1;
-        }
-        remQuo = divModAny(result, powersOfTwo[n]);
-        return remQuo[1].isNegative() ? remQuo[0].prev() : remQuo[0];
-    };
-    NativeBigInt.prototype.shiftRight = SmallInteger.prototype.shiftRight = BigInteger.prototype.shiftRight;
-
-    function bitwise(x, y, fn) {
-        y = parseValue(y);
-        var xSign = x.isNegative(), ySign = y.isNegative();
-        var xRem = xSign ? x.not() : x,
-            yRem = ySign ? y.not() : y;
-        var xDigit = 0, yDigit = 0;
-        var xDivMod = null, yDivMod = null;
-        var result = [];
-        while (!xRem.isZero() || !yRem.isZero()) {
-            xDivMod = divModAny(xRem, highestPower2);
-            xDigit = xDivMod[1].toJSNumber();
-            if (xSign) {
-                xDigit = highestPower2 - 1 - xDigit; // two's complement for negative numbers
-            }
-
-            yDivMod = divModAny(yRem, highestPower2);
-            yDigit = yDivMod[1].toJSNumber();
-            if (ySign) {
-                yDigit = highestPower2 - 1 - yDigit; // two's complement for negative numbers
-            }
-
-            xRem = xDivMod[0];
-            yRem = yDivMod[0];
-            result.push(fn(xDigit, yDigit));
-        }
-        var sum = fn(xSign ? 1 : 0, ySign ? 1 : 0) !== 0 ? bigInt(-1) : bigInt(0);
-        for (var i = result.length - 1; i >= 0; i -= 1) {
-            sum = sum.multiply(highestPower2).add(bigInt(result[i]));
-        }
-        return sum;
-    }
-
-    BigInteger.prototype.not = function () {
-        return this.negate().prev();
-    };
-    NativeBigInt.prototype.not = SmallInteger.prototype.not = BigInteger.prototype.not;
-
-    BigInteger.prototype.and = function (n) {
-        return bitwise(this, n, function (a, b) { return a & b; });
-    };
-    NativeBigInt.prototype.and = SmallInteger.prototype.and = BigInteger.prototype.and;
-
-    BigInteger.prototype.or = function (n) {
-        return bitwise(this, n, function (a, b) { return a | b; });
-    };
-    NativeBigInt.prototype.or = SmallInteger.prototype.or = BigInteger.prototype.or;
-
-    BigInteger.prototype.xor = function (n) {
-        return bitwise(this, n, function (a, b) { return a ^ b; });
-    };
-    NativeBigInt.prototype.xor = SmallInteger.prototype.xor = BigInteger.prototype.xor;
-
-    var LOBMASK_I = 1 << 30, LOBMASK_BI = (BASE & -BASE) * (BASE & -BASE) | LOBMASK_I;
-    function roughLOB(n) { // get lowestOneBit (rough)
-        // SmallInteger: return Min(lowestOneBit(n), 1 << 30)
-        // BigInteger: return Min(lowestOneBit(n), 1 << 14) [BASE=1e7]
-        var v = n.value,
-            x = typeof v === "number" ? v | LOBMASK_I :
-                typeof v === "bigint" ? v | BigInt(LOBMASK_I) :
-                    v[0] + v[1] * BASE | LOBMASK_BI;
-        return x & -x;
-    }
-
-    function integerLogarithm(value, base) {
-        if (base.compareTo(value) <= 0) {
-            var tmp = integerLogarithm(value, base.square(base));
-            var p = tmp.p;
-            var e = tmp.e;
-            var t = p.multiply(base);
-            return t.compareTo(value) <= 0 ? { p: t, e: e * 2 + 1 } : { p: p, e: e * 2 };
-        }
-        return { p: bigInt(1), e: 0 };
-    }
-
-    BigInteger.prototype.bitLength = function () {
-        var n = this;
-        if (n.compareTo(bigInt(0)) < 0) {
-            n = n.negate().subtract(bigInt(1));
-        }
-        if (n.compareTo(bigInt(0)) === 0) {
-            return bigInt(0);
-        }
-        return bigInt(integerLogarithm(n, bigInt(2)).e).add(bigInt(1));
-    }
-    NativeBigInt.prototype.bitLength = SmallInteger.prototype.bitLength = BigInteger.prototype.bitLength;
-
-    function max(a, b) {
-        a = parseValue(a);
-        b = parseValue(b);
-        return a.greater(b) ? a : b;
-    }
-    function min(a, b) {
-        a = parseValue(a);
-        b = parseValue(b);
-        return a.lesser(b) ? a : b;
-    }
-    function gcd(a, b) {
-        a = parseValue(a).abs();
-        b = parseValue(b).abs();
-        if (a.equals(b)) return a;
-        if (a.isZero()) return b;
-        if (b.isZero()) return a;
-        var c = Integer[1], d, t;
-        while (a.isEven() && b.isEven()) {
-            d = min(roughLOB(a), roughLOB(b));
-            a = a.divide(d);
-            b = b.divide(d);
-            c = c.multiply(d);
-        }
-        while (a.isEven()) {
-            a = a.divide(roughLOB(a));
-        }
-        do {
-            while (b.isEven()) {
-                b = b.divide(roughLOB(b));
-            }
-            if (a.greater(b)) {
-                t = b; b = a; a = t;
-            }
-            b = b.subtract(a);
-        } while (!b.isZero());
-        return c.isUnit() ? a : a.multiply(c);
-    }
-    function lcm(a, b) {
-        a = parseValue(a).abs();
-        b = parseValue(b).abs();
-        return a.divide(gcd(a, b)).multiply(b);
-    }
-    function randBetween(a, b, rng) {
-        a = parseValue(a);
-        b = parseValue(b);
-        var usedRNG = rng || Math.random;
-        var low = min(a, b), high = max(a, b);
-        var range = high.subtract(low).add(1);
-        if (range.isSmall) return low.add(Math.floor(usedRNG() * range));
-        var digits = toBase(range, BASE).value;
-        var result = [], restricted = true;
-        for (var i = 0; i < digits.length; i++) {
-            var top = restricted ? digits[i] : BASE;
-            var digit = truncate(usedRNG() * top);
-            result.push(digit);
-            if (digit < top) restricted = false;
-        }
-        return low.add(Integer.fromArray(result, BASE, false));
-    }
-
-    var parseBase = function (text, base, alphabet, caseSensitive) {
-        alphabet = alphabet || DEFAULT_ALPHABET;
-        text = String(text);
-        if (!caseSensitive) {
-            text = text.toLowerCase();
-            alphabet = alphabet.toLowerCase();
-        }
-        var length = text.length;
-        var i;
-        var absBase = Math.abs(base);
-        var alphabetValues = {};
-        for (i = 0; i < alphabet.length; i++) {
-            alphabetValues[alphabet[i]] = i;
-        }
-        for (i = 0; i < length; i++) {
-            var c = text[i];
-            if (c === "-") continue;
-            if (c in alphabetValues) {
-                if (alphabetValues[c] >= absBase) {
-                    if (c === "1" && absBase === 1) continue;
-                    throw new Error(c + " is not a valid digit in base " + base + ".");
-                }
-            }
-        }
-        base = parseValue(base);
-        var digits = [];
-        var isNegative = text[0] === "-";
-        for (i = isNegative ? 1 : 0; i < text.length; i++) {
-            var c = text[i];
-            if (c in alphabetValues) digits.push(parseValue(alphabetValues[c]));
-            else if (c === "<") {
-                var start = i;
-                do { i++; } while (text[i] !== ">" && i < text.length);
-                digits.push(parseValue(text.slice(start + 1, i)));
-            }
-            else throw new Error(c + " is not a valid character");
-        }
-        return parseBaseFromArray(digits, base, isNegative);
-    };
-
-    function parseBaseFromArray(digits, base, isNegative) {
-        var val = Integer[0], pow = Integer[1], i;
-        for (i = digits.length - 1; i >= 0; i--) {
-            val = val.add(digits[i].times(pow));
-            pow = pow.times(base);
-        }
-        return isNegative ? val.negate() : val;
-    }
-
-    function stringify(digit, alphabet) {
-        alphabet = alphabet || DEFAULT_ALPHABET;
-        if (digit < alphabet.length) {
-            return alphabet[digit];
-        }
-        return "<" + digit + ">";
-    }
-
-    function toBase(n, base) {
-        base = bigInt(base);
-        if (base.isZero()) {
-            if (n.isZero()) return { value: [0], isNegative: false };
-            throw new Error("Cannot convert nonzero numbers to base 0.");
-        }
-        if (base.equals(-1)) {
-            if (n.isZero()) return { value: [0], isNegative: false };
-            if (n.isNegative())
-                return {
-                    value: [].concat.apply([], Array.apply(null, Array(-n.toJSNumber()))
-                        .map(Array.prototype.valueOf, [1, 0])
-                    ),
-                    isNegative: false
-                };
-
-            var arr = Array.apply(null, Array(n.toJSNumber() - 1))
-                .map(Array.prototype.valueOf, [0, 1]);
-            arr.unshift([1]);
-            return {
-                value: [].concat.apply([], arr),
-                isNegative: false
-            };
-        }
-
-        var neg = false;
-        if (n.isNegative() && base.isPositive()) {
-            neg = true;
-            n = n.abs();
-        }
-        if (base.isUnit()) {
-            if (n.isZero()) return { value: [0], isNegative: false };
-
-            return {
-                value: Array.apply(null, Array(n.toJSNumber()))
-                    .map(Number.prototype.valueOf, 1),
-                isNegative: neg
-            };
-        }
-        var out = [];
-        var left = n, divmod;
-        while (left.isNegative() || left.compareAbs(base) >= 0) {
-            divmod = left.divmod(base);
-            left = divmod.quotient;
-            var digit = divmod.remainder;
-            if (digit.isNegative()) {
-                digit = base.minus(digit).abs();
-                left = left.next();
-            }
-            out.push(digit.toJSNumber());
-        }
-        out.push(left.toJSNumber());
-        return { value: out.reverse(), isNegative: neg };
-    }
-
-    function toBaseString(n, base, alphabet) {
-        var arr = toBase(n, base);
-        return (arr.isNegative ? "-" : "") + arr.value.map(function (x) {
-            return stringify(x, alphabet);
-        }).join('');
-    }
-
-    BigInteger.prototype.toArray = function (radix) {
-        return toBase(this, radix);
-    };
-
-    SmallInteger.prototype.toArray = function (radix) {
-        return toBase(this, radix);
-    };
-
-    NativeBigInt.prototype.toArray = function (radix) {
-        return toBase(this, radix);
-    };
-
-    BigInteger.prototype.toString = function (radix, alphabet) {
-        if (radix === undefined) radix = 10;
-        if (radix !== 10) return toBaseString(this, radix, alphabet);
-        var v = this.value, l = v.length, str = String(v[--l]), zeros = "0000000", digit;
-        while (--l >= 0) {
-            digit = String(v[l]);
-            str += zeros.slice(digit.length) + digit;
-        }
-        var sign = this.sign ? "-" : "";
-        return sign + str;
-    };
-
-    SmallInteger.prototype.toString = function (radix, alphabet) {
-        if (radix === undefined) radix = 10;
-        if (radix != 10) return toBaseString(this, radix, alphabet);
-        return String(this.value);
-    };
-
-    NativeBigInt.prototype.toString = SmallInteger.prototype.toString;
-
-    NativeBigInt.prototype.toJSON = BigInteger.prototype.toJSON = SmallInteger.prototype.toJSON = function () { return this.toString(); }
-
-    BigInteger.prototype.valueOf = function () {
-        return parseInt(this.toString(), 10);
-    };
-    BigInteger.prototype.toJSNumber = BigInteger.prototype.valueOf;
-
-    SmallInteger.prototype.valueOf = function () {
-        return this.value;
-    };
-    SmallInteger.prototype.toJSNumber = SmallInteger.prototype.valueOf;
-    NativeBigInt.prototype.valueOf = NativeBigInt.prototype.toJSNumber = function () {
-        return parseInt(this.toString(), 10);
-    }
-
-    function parseStringValue(v) {
-        if (isPrecise(+v)) {
-            var x = +v;
-            if (x === truncate(x))
-                return supportsNativeBigInt ? new NativeBigInt(BigInt(x)) : new SmallInteger(x);
-            throw new Error("Invalid integer: " + v);
-        }
-        var sign = v[0] === "-";
-        if (sign) v = v.slice(1);
-        var split = v.split(/e/i);
-        if (split.length > 2) throw new Error("Invalid integer: " + split.join("e"));
-        if (split.length === 2) {
-            var exp = split[1];
-            if (exp[0] === "+") exp = exp.slice(1);
-            exp = +exp;
-            if (exp !== truncate(exp) || !isPrecise(exp)) throw new Error("Invalid integer: " + exp + " is not a valid exponent.");
-            var text = split[0];
-            var decimalPlace = text.indexOf(".");
-            if (decimalPlace >= 0) {
-                exp -= text.length - decimalPlace - 1;
-                text = text.slice(0, decimalPlace) + text.slice(decimalPlace + 1);
-            }
-            if (exp < 0) throw new Error("Cannot include negative exponent part for integers");
-            text += (new Array(exp + 1)).join("0");
-            v = text;
-        }
-        var isValid = /^([0-9][0-9]*)$/.test(v);
-        if (!isValid) throw new Error("Invalid integer: " + v);
-        if (supportsNativeBigInt) {
-            return new NativeBigInt(BigInt(sign ? "-" + v : v));
-        }
-        var r = [], max = v.length, l = LOG_BASE, min = max - l;
-        while (max > 0) {
-            r.push(+v.slice(min, max));
-            min -= l;
-            if (min < 0) min = 0;
-            max -= l;
-        }
-        trim(r);
-        return new BigInteger(r, sign);
-    }
-
-    function parseNumberValue(v) {
-        if (supportsNativeBigInt) {
-            return new NativeBigInt(BigInt(v));
-        }
-        if (isPrecise(v)) {
-            if (v !== truncate(v)) throw new Error(v + " is not an integer.");
-            return new SmallInteger(v);
-        }
-        return parseStringValue(v.toString());
-    }
-
-    function parseValue(v) {
-        if (typeof v === "number") {
-            return parseNumberValue(v);
-        }
-        if (typeof v === "string") {
-            return parseStringValue(v);
-        }
-        if (typeof v === "bigint") {
-            return new NativeBigInt(v);
-        }
-        return v;
-    }
-    // Pre-define numbers in range [-999,999]
-    for (var i = 0; i < 1000; i++) {
-        Integer[i] = parseValue(i);
-        if (i > 0) Integer[-i] = parseValue(-i);
-    }
-    // Backwards compatibility
-    Integer.one = Integer[1];
-    Integer.zero = Integer[0];
-    Integer.minusOne = Integer[-1];
-    Integer.max = max;
-    Integer.min = min;
-    Integer.gcd = gcd;
-    Integer.lcm = lcm;
-    Integer.isInstance = function (x) { return x instanceof BigInteger || x instanceof SmallInteger || x instanceof NativeBigInt; };
-    Integer.randBetween = randBetween;
-
-    Integer.fromArray = function (digits, base, isNegative) {
-        return parseBaseFromArray(digits.map(parseValue), parseValue(base || 10), isNegative);
-    };
-
-    return Integer;
-})();
-
-// Node.js check
-if ( true && module.hasOwnProperty("exports")) {
-    module.exports = bigInt;
-}
-
-//amd check
-if (typeof define === "function" && define.amd) {
-    define( function () {
-        return bigInt;
-    });
-}
-
-
-/***/ }),
-
 /***/ 5490:
 /***/ ((module) => {
 
@@ -54544,4453 +53083,1600 @@ module.exports = function(dst, src) {
 
 /***/ }),
 
-/***/ 6863:
+/***/ 9618:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-module.exports = realpath
-realpath.realpath = realpath
-realpath.sync = realpathSync
-realpath.realpathSync = realpathSync
-realpath.monkeypatch = monkeypatch
-realpath.unmonkeypatch = unmonkeypatch
+"use strict";
 
-var fs = __nccwpck_require__(7147)
-var origRealpath = fs.realpath
-var origRealpathSync = fs.realpathSync
 
-var version = process.version
-var ok = /^v[0-5]\./.test(version)
-var old = __nccwpck_require__(1734)
+const fs = __nccwpck_require__(7758)
+const path = __nccwpck_require__(1017)
+const mkdirsSync = (__nccwpck_require__(8605).mkdirsSync)
+const utimesMillisSync = (__nccwpck_require__(2548).utimesMillisSync)
+const stat = __nccwpck_require__(3901)
 
-function newError (er) {
-  return er && er.syscall === 'realpath' && (
-    er.code === 'ELOOP' ||
-    er.code === 'ENOMEM' ||
-    er.code === 'ENAMETOOLONG'
+function copySync (src, dest, opts) {
+  if (typeof opts === 'function') {
+    opts = { filter: opts }
+  }
+
+  opts = opts || {}
+  opts.clobber = 'clobber' in opts ? !!opts.clobber : true // default to true for now
+  opts.overwrite = 'overwrite' in opts ? !!opts.overwrite : opts.clobber // overwrite falls back to clobber
+
+  // Warn about using preserveTimestamps on 32-bit node
+  if (opts.preserveTimestamps && process.arch === 'ia32') {
+    process.emitWarning(
+      'Using the preserveTimestamps option in 32-bit node is not recommended;\n\n' +
+      '\tsee https://github.com/jprichardson/node-fs-extra/issues/269',
+      'Warning', 'fs-extra-WARN0002'
+    )
+  }
+
+  const { srcStat, destStat } = stat.checkPathsSync(src, dest, 'copy', opts)
+  stat.checkParentPathsSync(src, srcStat, dest, 'copy')
+  if (opts.filter && !opts.filter(src, dest)) return
+  const destParent = path.dirname(dest)
+  if (!fs.existsSync(destParent)) mkdirsSync(destParent)
+  return getStats(destStat, src, dest, opts)
+}
+
+function getStats (destStat, src, dest, opts) {
+  const statSync = opts.dereference ? fs.statSync : fs.lstatSync
+  const srcStat = statSync(src)
+
+  if (srcStat.isDirectory()) return onDir(srcStat, destStat, src, dest, opts)
+  else if (srcStat.isFile() ||
+           srcStat.isCharacterDevice() ||
+           srcStat.isBlockDevice()) return onFile(srcStat, destStat, src, dest, opts)
+  else if (srcStat.isSymbolicLink()) return onLink(destStat, src, dest, opts)
+  else if (srcStat.isSocket()) throw new Error(`Cannot copy a socket file: ${src}`)
+  else if (srcStat.isFIFO()) throw new Error(`Cannot copy a FIFO pipe: ${src}`)
+  throw new Error(`Unknown file: ${src}`)
+}
+
+function onFile (srcStat, destStat, src, dest, opts) {
+  if (!destStat) return copyFile(srcStat, src, dest, opts)
+  return mayCopyFile(srcStat, src, dest, opts)
+}
+
+function mayCopyFile (srcStat, src, dest, opts) {
+  if (opts.overwrite) {
+    fs.unlinkSync(dest)
+    return copyFile(srcStat, src, dest, opts)
+  } else if (opts.errorOnExist) {
+    throw new Error(`'${dest}' already exists`)
+  }
+}
+
+function copyFile (srcStat, src, dest, opts) {
+  fs.copyFileSync(src, dest)
+  if (opts.preserveTimestamps) handleTimestamps(srcStat.mode, src, dest)
+  return setDestMode(dest, srcStat.mode)
+}
+
+function handleTimestamps (srcMode, src, dest) {
+  // Make sure the file is writable before setting the timestamp
+  // otherwise open fails with EPERM when invoked with 'r+'
+  // (through utimes call)
+  if (fileIsNotWritable(srcMode)) makeFileWritable(dest, srcMode)
+  return setDestTimestamps(src, dest)
+}
+
+function fileIsNotWritable (srcMode) {
+  return (srcMode & 0o200) === 0
+}
+
+function makeFileWritable (dest, srcMode) {
+  return setDestMode(dest, srcMode | 0o200)
+}
+
+function setDestMode (dest, srcMode) {
+  return fs.chmodSync(dest, srcMode)
+}
+
+function setDestTimestamps (src, dest) {
+  // The initial srcStat.atime cannot be trusted
+  // because it is modified by the read(2) system call
+  // (See https://nodejs.org/api/fs.html#fs_stat_time_values)
+  const updatedSrcStat = fs.statSync(src)
+  return utimesMillisSync(dest, updatedSrcStat.atime, updatedSrcStat.mtime)
+}
+
+function onDir (srcStat, destStat, src, dest, opts) {
+  if (!destStat) return mkDirAndCopy(srcStat.mode, src, dest, opts)
+  return copyDir(src, dest, opts)
+}
+
+function mkDirAndCopy (srcMode, src, dest, opts) {
+  fs.mkdirSync(dest)
+  copyDir(src, dest, opts)
+  return setDestMode(dest, srcMode)
+}
+
+function copyDir (src, dest, opts) {
+  fs.readdirSync(src).forEach(item => copyDirItem(item, src, dest, opts))
+}
+
+function copyDirItem (item, src, dest, opts) {
+  const srcItem = path.join(src, item)
+  const destItem = path.join(dest, item)
+  if (opts.filter && !opts.filter(srcItem, destItem)) return
+  const { destStat } = stat.checkPathsSync(srcItem, destItem, 'copy', opts)
+  return getStats(destStat, srcItem, destItem, opts)
+}
+
+function onLink (destStat, src, dest, opts) {
+  let resolvedSrc = fs.readlinkSync(src)
+  if (opts.dereference) {
+    resolvedSrc = path.resolve(process.cwd(), resolvedSrc)
+  }
+
+  if (!destStat) {
+    return fs.symlinkSync(resolvedSrc, dest)
+  } else {
+    let resolvedDest
+    try {
+      resolvedDest = fs.readlinkSync(dest)
+    } catch (err) {
+      // dest exists and is a regular file or directory,
+      // Windows may throw UNKNOWN error. If dest already exists,
+      // fs throws error anyway, so no need to guard against it here.
+      if (err.code === 'EINVAL' || err.code === 'UNKNOWN') return fs.symlinkSync(resolvedSrc, dest)
+      throw err
+    }
+    if (opts.dereference) {
+      resolvedDest = path.resolve(process.cwd(), resolvedDest)
+    }
+    if (stat.isSrcSubdir(resolvedSrc, resolvedDest)) {
+      throw new Error(`Cannot copy '${resolvedSrc}' to a subdirectory of itself, '${resolvedDest}'.`)
+    }
+
+    // prevent copy if src is a subdir of dest since unlinking
+    // dest in this case would result in removing src contents
+    // and therefore a broken symlink would be created.
+    if (stat.isSrcSubdir(resolvedDest, resolvedSrc)) {
+      throw new Error(`Cannot overwrite '${resolvedDest}' with '${resolvedSrc}'.`)
+    }
+    return copyLink(resolvedSrc, dest)
+  }
+}
+
+function copyLink (resolvedSrc, dest) {
+  fs.unlinkSync(dest)
+  return fs.symlinkSync(resolvedSrc, dest)
+}
+
+module.exports = copySync
+
+
+/***/ }),
+
+/***/ 8834:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const fs = __nccwpck_require__(1176)
+const path = __nccwpck_require__(1017)
+const { mkdirs } = __nccwpck_require__(8605)
+const { pathExists } = __nccwpck_require__(3835)
+const { utimesMillis } = __nccwpck_require__(2548)
+const stat = __nccwpck_require__(3901)
+
+async function copy (src, dest, opts = {}) {
+  if (typeof opts === 'function') {
+    opts = { filter: opts }
+  }
+
+  opts.clobber = 'clobber' in opts ? !!opts.clobber : true // default to true for now
+  opts.overwrite = 'overwrite' in opts ? !!opts.overwrite : opts.clobber // overwrite falls back to clobber
+
+  // Warn about using preserveTimestamps on 32-bit node
+  if (opts.preserveTimestamps && process.arch === 'ia32') {
+    process.emitWarning(
+      'Using the preserveTimestamps option in 32-bit node is not recommended;\n\n' +
+      '\tsee https://github.com/jprichardson/node-fs-extra/issues/269',
+      'Warning', 'fs-extra-WARN0001'
+    )
+  }
+
+  const { srcStat, destStat } = await stat.checkPaths(src, dest, 'copy', opts)
+
+  await stat.checkParentPaths(src, srcStat, dest, 'copy')
+
+  const include = await runFilter(src, dest, opts)
+
+  if (!include) return
+
+  // check if the parent of dest exists, and create it if it doesn't exist
+  const destParent = path.dirname(dest)
+  const dirExists = await pathExists(destParent)
+  if (!dirExists) {
+    await mkdirs(destParent)
+  }
+
+  await getStatsAndPerformCopy(destStat, src, dest, opts)
+}
+
+async function runFilter (src, dest, opts) {
+  if (!opts.filter) return true
+  return opts.filter(src, dest)
+}
+
+async function getStatsAndPerformCopy (destStat, src, dest, opts) {
+  const statFn = opts.dereference ? fs.stat : fs.lstat
+  const srcStat = await statFn(src)
+
+  if (srcStat.isDirectory()) return onDir(srcStat, destStat, src, dest, opts)
+
+  if (
+    srcStat.isFile() ||
+    srcStat.isCharacterDevice() ||
+    srcStat.isBlockDevice()
+  ) return onFile(srcStat, destStat, src, dest, opts)
+
+  if (srcStat.isSymbolicLink()) return onLink(destStat, src, dest, opts)
+  if (srcStat.isSocket()) throw new Error(`Cannot copy a socket file: ${src}`)
+  if (srcStat.isFIFO()) throw new Error(`Cannot copy a FIFO pipe: ${src}`)
+  throw new Error(`Unknown file: ${src}`)
+}
+
+async function onFile (srcStat, destStat, src, dest, opts) {
+  if (!destStat) return copyFile(srcStat, src, dest, opts)
+
+  if (opts.overwrite) {
+    await fs.unlink(dest)
+    return copyFile(srcStat, src, dest, opts)
+  }
+  if (opts.errorOnExist) {
+    throw new Error(`'${dest}' already exists`)
+  }
+}
+
+async function copyFile (srcStat, src, dest, opts) {
+  await fs.copyFile(src, dest)
+  if (opts.preserveTimestamps) {
+    // Make sure the file is writable before setting the timestamp
+    // otherwise open fails with EPERM when invoked with 'r+'
+    // (through utimes call)
+    if (fileIsNotWritable(srcStat.mode)) {
+      await makeFileWritable(dest, srcStat.mode)
+    }
+
+    // Set timestamps and mode correspondingly
+
+    // Note that The initial srcStat.atime cannot be trusted
+    // because it is modified by the read(2) system call
+    // (See https://nodejs.org/api/fs.html#fs_stat_time_values)
+    const updatedSrcStat = await fs.stat(src)
+    await utimesMillis(dest, updatedSrcStat.atime, updatedSrcStat.mtime)
+  }
+
+  return fs.chmod(dest, srcStat.mode)
+}
+
+function fileIsNotWritable (srcMode) {
+  return (srcMode & 0o200) === 0
+}
+
+function makeFileWritable (dest, srcMode) {
+  return fs.chmod(dest, srcMode | 0o200)
+}
+
+async function onDir (srcStat, destStat, src, dest, opts) {
+  // the dest directory might not exist, create it
+  if (!destStat) {
+    await fs.mkdir(dest)
+  }
+
+  const items = await fs.readdir(src)
+
+  // loop through the files in the current directory to copy everything
+  await Promise.all(items.map(async item => {
+    const srcItem = path.join(src, item)
+    const destItem = path.join(dest, item)
+
+    // skip the item if it is matches by the filter function
+    const include = await runFilter(srcItem, destItem, opts)
+    if (!include) return
+
+    const { destStat } = await stat.checkPaths(srcItem, destItem, 'copy', opts)
+
+    // If the item is a copyable file, `getStatsAndPerformCopy` will copy it
+    // If the item is a directory, `getStatsAndPerformCopy` will call `onDir` recursively
+    return getStatsAndPerformCopy(destStat, srcItem, destItem, opts)
+  }))
+
+  if (!destStat) {
+    await fs.chmod(dest, srcStat.mode)
+  }
+}
+
+async function onLink (destStat, src, dest, opts) {
+  let resolvedSrc = await fs.readlink(src)
+  if (opts.dereference) {
+    resolvedSrc = path.resolve(process.cwd(), resolvedSrc)
+  }
+  if (!destStat) {
+    return fs.symlink(resolvedSrc, dest)
+  }
+
+  let resolvedDest = null
+  try {
+    resolvedDest = await fs.readlink(dest)
+  } catch (e) {
+    // dest exists and is a regular file or directory,
+    // Windows may throw UNKNOWN error. If dest already exists,
+    // fs throws error anyway, so no need to guard against it here.
+    if (e.code === 'EINVAL' || e.code === 'UNKNOWN') return fs.symlink(resolvedSrc, dest)
+    throw e
+  }
+  if (opts.dereference) {
+    resolvedDest = path.resolve(process.cwd(), resolvedDest)
+  }
+  if (stat.isSrcSubdir(resolvedSrc, resolvedDest)) {
+    throw new Error(`Cannot copy '${resolvedSrc}' to a subdirectory of itself, '${resolvedDest}'.`)
+  }
+
+  // do not copy if src is a subdir of dest since unlinking
+  // dest in this case would result in removing src contents
+  // and therefore a broken symlink would be created.
+  if (stat.isSrcSubdir(resolvedDest, resolvedSrc)) {
+    throw new Error(`Cannot overwrite '${resolvedDest}' with '${resolvedSrc}'.`)
+  }
+
+  // copy the link
+  await fs.unlink(dest)
+  return fs.symlink(resolvedSrc, dest)
+}
+
+module.exports = copy
+
+
+/***/ }),
+
+/***/ 1335:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const u = (__nccwpck_require__(9046).fromPromise)
+module.exports = {
+  copy: u(__nccwpck_require__(8834)),
+  copySync: __nccwpck_require__(9618)
+}
+
+
+/***/ }),
+
+/***/ 6970:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const u = (__nccwpck_require__(9046).fromPromise)
+const fs = __nccwpck_require__(1176)
+const path = __nccwpck_require__(1017)
+const mkdir = __nccwpck_require__(8605)
+const remove = __nccwpck_require__(7357)
+
+const emptyDir = u(async function emptyDir (dir) {
+  let items
+  try {
+    items = await fs.readdir(dir)
+  } catch {
+    return mkdir.mkdirs(dir)
+  }
+
+  return Promise.all(items.map(item => remove.remove(path.join(dir, item))))
+})
+
+function emptyDirSync (dir) {
+  let items
+  try {
+    items = fs.readdirSync(dir)
+  } catch {
+    return mkdir.mkdirsSync(dir)
+  }
+
+  items.forEach(item => {
+    item = path.join(dir, item)
+    remove.removeSync(item)
+  })
+}
+
+module.exports = {
+  emptyDirSync,
+  emptydirSync: emptyDirSync,
+  emptyDir,
+  emptydir: emptyDir
+}
+
+
+/***/ }),
+
+/***/ 2164:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const u = (__nccwpck_require__(9046).fromPromise)
+const path = __nccwpck_require__(1017)
+const fs = __nccwpck_require__(1176)
+const mkdir = __nccwpck_require__(8605)
+
+async function createFile (file) {
+  let stats
+  try {
+    stats = await fs.stat(file)
+  } catch { }
+  if (stats && stats.isFile()) return
+
+  const dir = path.dirname(file)
+
+  let dirStats = null
+  try {
+    dirStats = await fs.stat(dir)
+  } catch (err) {
+    // if the directory doesn't exist, make it
+    if (err.code === 'ENOENT') {
+      await mkdir.mkdirs(dir)
+      await fs.writeFile(file, '')
+      return
+    } else {
+      throw err
+    }
+  }
+
+  if (dirStats.isDirectory()) {
+    await fs.writeFile(file, '')
+  } else {
+    // parent is not a directory
+    // This is just to cause an internal ENOTDIR error to be thrown
+    await fs.readdir(dir)
+  }
+}
+
+function createFileSync (file) {
+  let stats
+  try {
+    stats = fs.statSync(file)
+  } catch { }
+  if (stats && stats.isFile()) return
+
+  const dir = path.dirname(file)
+  try {
+    if (!fs.statSync(dir).isDirectory()) {
+      // parent is not a directory
+      // This is just to cause an internal ENOTDIR error to be thrown
+      fs.readdirSync(dir)
+    }
+  } catch (err) {
+    // If the stat call above failed because the directory doesn't exist, create it
+    if (err && err.code === 'ENOENT') mkdir.mkdirsSync(dir)
+    else throw err
+  }
+
+  fs.writeFileSync(file, '')
+}
+
+module.exports = {
+  createFile: u(createFile),
+  createFileSync
+}
+
+
+/***/ }),
+
+/***/ 55:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const { createFile, createFileSync } = __nccwpck_require__(2164)
+const { createLink, createLinkSync } = __nccwpck_require__(3797)
+const { createSymlink, createSymlinkSync } = __nccwpck_require__(2549)
+
+module.exports = {
+  // file
+  createFile,
+  createFileSync,
+  ensureFile: createFile,
+  ensureFileSync: createFileSync,
+  // link
+  createLink,
+  createLinkSync,
+  ensureLink: createLink,
+  ensureLinkSync: createLinkSync,
+  // symlink
+  createSymlink,
+  createSymlinkSync,
+  ensureSymlink: createSymlink,
+  ensureSymlinkSync: createSymlinkSync
+}
+
+
+/***/ }),
+
+/***/ 3797:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const u = (__nccwpck_require__(9046).fromPromise)
+const path = __nccwpck_require__(1017)
+const fs = __nccwpck_require__(1176)
+const mkdir = __nccwpck_require__(8605)
+const { pathExists } = __nccwpck_require__(3835)
+const { areIdentical } = __nccwpck_require__(3901)
+
+async function createLink (srcpath, dstpath) {
+  let dstStat
+  try {
+    dstStat = await fs.lstat(dstpath)
+  } catch {
+    // ignore error
+  }
+
+  let srcStat
+  try {
+    srcStat = await fs.lstat(srcpath)
+  } catch (err) {
+    err.message = err.message.replace('lstat', 'ensureLink')
+    throw err
+  }
+
+  if (dstStat && areIdentical(srcStat, dstStat)) return
+
+  const dir = path.dirname(dstpath)
+
+  const dirExists = await pathExists(dir)
+
+  if (!dirExists) {
+    await mkdir.mkdirs(dir)
+  }
+
+  await fs.link(srcpath, dstpath)
+}
+
+function createLinkSync (srcpath, dstpath) {
+  let dstStat
+  try {
+    dstStat = fs.lstatSync(dstpath)
+  } catch {}
+
+  try {
+    const srcStat = fs.lstatSync(srcpath)
+    if (dstStat && areIdentical(srcStat, dstStat)) return
+  } catch (err) {
+    err.message = err.message.replace('lstat', 'ensureLink')
+    throw err
+  }
+
+  const dir = path.dirname(dstpath)
+  const dirExists = fs.existsSync(dir)
+  if (dirExists) return fs.linkSync(srcpath, dstpath)
+  mkdir.mkdirsSync(dir)
+
+  return fs.linkSync(srcpath, dstpath)
+}
+
+module.exports = {
+  createLink: u(createLink),
+  createLinkSync
+}
+
+
+/***/ }),
+
+/***/ 3727:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const path = __nccwpck_require__(1017)
+const fs = __nccwpck_require__(1176)
+const { pathExists } = __nccwpck_require__(3835)
+
+const u = (__nccwpck_require__(9046).fromPromise)
+
+/**
+ * Function that returns two types of paths, one relative to symlink, and one
+ * relative to the current working directory. Checks if path is absolute or
+ * relative. If the path is relative, this function checks if the path is
+ * relative to symlink or relative to current working directory. This is an
+ * initiative to find a smarter `srcpath` to supply when building symlinks.
+ * This allows you to determine which path to use out of one of three possible
+ * types of source paths. The first is an absolute path. This is detected by
+ * `path.isAbsolute()`. When an absolute path is provided, it is checked to
+ * see if it exists. If it does it's used, if not an error is returned
+ * (callback)/ thrown (sync). The other two options for `srcpath` are a
+ * relative url. By default Node's `fs.symlink` works by creating a symlink
+ * using `dstpath` and expects the `srcpath` to be relative to the newly
+ * created symlink. If you provide a `srcpath` that does not exist on the file
+ * system it results in a broken symlink. To minimize this, the function
+ * checks to see if the 'relative to symlink' source file exists, and if it
+ * does it will use it. If it does not, it checks if there's a file that
+ * exists that is relative to the current working directory, if does its used.
+ * This preserves the expectations of the original fs.symlink spec and adds
+ * the ability to pass in `relative to current working direcotry` paths.
+ */
+
+async function symlinkPaths (srcpath, dstpath) {
+  if (path.isAbsolute(srcpath)) {
+    try {
+      await fs.lstat(srcpath)
+    } catch (err) {
+      err.message = err.message.replace('lstat', 'ensureSymlink')
+      throw err
+    }
+
+    return {
+      toCwd: srcpath,
+      toDst: srcpath
+    }
+  }
+
+  const dstdir = path.dirname(dstpath)
+  const relativeToDst = path.join(dstdir, srcpath)
+
+  const exists = await pathExists(relativeToDst)
+  if (exists) {
+    return {
+      toCwd: relativeToDst,
+      toDst: srcpath
+    }
+  }
+
+  try {
+    await fs.lstat(srcpath)
+  } catch (err) {
+    err.message = err.message.replace('lstat', 'ensureSymlink')
+    throw err
+  }
+
+  return {
+    toCwd: srcpath,
+    toDst: path.relative(dstdir, srcpath)
+  }
+}
+
+function symlinkPathsSync (srcpath, dstpath) {
+  if (path.isAbsolute(srcpath)) {
+    const exists = fs.existsSync(srcpath)
+    if (!exists) throw new Error('absolute srcpath does not exist')
+    return {
+      toCwd: srcpath,
+      toDst: srcpath
+    }
+  }
+
+  const dstdir = path.dirname(dstpath)
+  const relativeToDst = path.join(dstdir, srcpath)
+  const exists = fs.existsSync(relativeToDst)
+  if (exists) {
+    return {
+      toCwd: relativeToDst,
+      toDst: srcpath
+    }
+  }
+
+  const srcExists = fs.existsSync(srcpath)
+  if (!srcExists) throw new Error('relative srcpath does not exist')
+  return {
+    toCwd: srcpath,
+    toDst: path.relative(dstdir, srcpath)
+  }
+}
+
+module.exports = {
+  symlinkPaths: u(symlinkPaths),
+  symlinkPathsSync
+}
+
+
+/***/ }),
+
+/***/ 8254:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const fs = __nccwpck_require__(1176)
+const u = (__nccwpck_require__(9046).fromPromise)
+
+async function symlinkType (srcpath, type) {
+  if (type) return type
+
+  let stats
+  try {
+    stats = await fs.lstat(srcpath)
+  } catch {
+    return 'file'
+  }
+
+  return (stats && stats.isDirectory()) ? 'dir' : 'file'
+}
+
+function symlinkTypeSync (srcpath, type) {
+  if (type) return type
+
+  let stats
+  try {
+    stats = fs.lstatSync(srcpath)
+  } catch {
+    return 'file'
+  }
+  return (stats && stats.isDirectory()) ? 'dir' : 'file'
+}
+
+module.exports = {
+  symlinkType: u(symlinkType),
+  symlinkTypeSync
+}
+
+
+/***/ }),
+
+/***/ 2549:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const u = (__nccwpck_require__(9046).fromPromise)
+const path = __nccwpck_require__(1017)
+const fs = __nccwpck_require__(1176)
+
+const { mkdirs, mkdirsSync } = __nccwpck_require__(8605)
+
+const { symlinkPaths, symlinkPathsSync } = __nccwpck_require__(3727)
+const { symlinkType, symlinkTypeSync } = __nccwpck_require__(8254)
+
+const { pathExists } = __nccwpck_require__(3835)
+
+const { areIdentical } = __nccwpck_require__(3901)
+
+async function createSymlink (srcpath, dstpath, type) {
+  let stats
+  try {
+    stats = await fs.lstat(dstpath)
+  } catch { }
+
+  if (stats && stats.isSymbolicLink()) {
+    const [srcStat, dstStat] = await Promise.all([
+      fs.stat(srcpath),
+      fs.stat(dstpath)
+    ])
+
+    if (areIdentical(srcStat, dstStat)) return
+  }
+
+  const relative = await symlinkPaths(srcpath, dstpath)
+  srcpath = relative.toDst
+  const toType = await symlinkType(relative.toCwd, type)
+  const dir = path.dirname(dstpath)
+
+  if (!(await pathExists(dir))) {
+    await mkdirs(dir)
+  }
+
+  return fs.symlink(srcpath, dstpath, toType)
+}
+
+function createSymlinkSync (srcpath, dstpath, type) {
+  let stats
+  try {
+    stats = fs.lstatSync(dstpath)
+  } catch { }
+  if (stats && stats.isSymbolicLink()) {
+    const srcStat = fs.statSync(srcpath)
+    const dstStat = fs.statSync(dstpath)
+    if (areIdentical(srcStat, dstStat)) return
+  }
+
+  const relative = symlinkPathsSync(srcpath, dstpath)
+  srcpath = relative.toDst
+  type = symlinkTypeSync(relative.toCwd, type)
+  const dir = path.dirname(dstpath)
+  const exists = fs.existsSync(dir)
+  if (exists) return fs.symlinkSync(srcpath, dstpath, type)
+  mkdirsSync(dir)
+  return fs.symlinkSync(srcpath, dstpath, type)
+}
+
+module.exports = {
+  createSymlink: u(createSymlink),
+  createSymlinkSync
+}
+
+
+/***/ }),
+
+/***/ 1176:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+// This is adapted from https://github.com/normalize/mz
+// Copyright (c) 2014-2016 Jonathan Ong me@jongleberry.com and Contributors
+const u = (__nccwpck_require__(9046).fromCallback)
+const fs = __nccwpck_require__(7758)
+
+const api = [
+  'access',
+  'appendFile',
+  'chmod',
+  'chown',
+  'close',
+  'copyFile',
+  'fchmod',
+  'fchown',
+  'fdatasync',
+  'fstat',
+  'fsync',
+  'ftruncate',
+  'futimes',
+  'lchmod',
+  'lchown',
+  'link',
+  'lstat',
+  'mkdir',
+  'mkdtemp',
+  'open',
+  'opendir',
+  'readdir',
+  'readFile',
+  'readlink',
+  'realpath',
+  'rename',
+  'rm',
+  'rmdir',
+  'stat',
+  'symlink',
+  'truncate',
+  'unlink',
+  'utimes',
+  'writeFile'
+].filter(key => {
+  // Some commands are not available on some systems. Ex:
+  // fs.cp was added in Node.js v16.7.0
+  // fs.lchown is not available on at least some Linux
+  return typeof fs[key] === 'function'
+})
+
+// Export cloned fs:
+Object.assign(exports, fs)
+
+// Universalify async methods:
+api.forEach(method => {
+  exports[method] = u(fs[method])
+})
+
+// We differ from mz/fs in that we still ship the old, broken, fs.exists()
+// since we are a drop-in replacement for the native module
+exports.exists = function (filename, callback) {
+  if (typeof callback === 'function') {
+    return fs.exists(filename, callback)
+  }
+  return new Promise(resolve => {
+    return fs.exists(filename, resolve)
+  })
+}
+
+// fs.read(), fs.write(), fs.readv(), & fs.writev() need special treatment due to multiple callback args
+
+exports.read = function (fd, buffer, offset, length, position, callback) {
+  if (typeof callback === 'function') {
+    return fs.read(fd, buffer, offset, length, position, callback)
+  }
+  return new Promise((resolve, reject) => {
+    fs.read(fd, buffer, offset, length, position, (err, bytesRead, buffer) => {
+      if (err) return reject(err)
+      resolve({ bytesRead, buffer })
+    })
+  })
+}
+
+// Function signature can be
+// fs.write(fd, buffer[, offset[, length[, position]]], callback)
+// OR
+// fs.write(fd, string[, position[, encoding]], callback)
+// We need to handle both cases, so we use ...args
+exports.write = function (fd, buffer, ...args) {
+  if (typeof args[args.length - 1] === 'function') {
+    return fs.write(fd, buffer, ...args)
+  }
+
+  return new Promise((resolve, reject) => {
+    fs.write(fd, buffer, ...args, (err, bytesWritten, buffer) => {
+      if (err) return reject(err)
+      resolve({ bytesWritten, buffer })
+    })
+  })
+}
+
+// Function signature is
+// s.readv(fd, buffers[, position], callback)
+// We need to handle the optional arg, so we use ...args
+exports.readv = function (fd, buffers, ...args) {
+  if (typeof args[args.length - 1] === 'function') {
+    return fs.readv(fd, buffers, ...args)
+  }
+
+  return new Promise((resolve, reject) => {
+    fs.readv(fd, buffers, ...args, (err, bytesRead, buffers) => {
+      if (err) return reject(err)
+      resolve({ bytesRead, buffers })
+    })
+  })
+}
+
+// Function signature is
+// s.writev(fd, buffers[, position], callback)
+// We need to handle the optional arg, so we use ...args
+exports.writev = function (fd, buffers, ...args) {
+  if (typeof args[args.length - 1] === 'function') {
+    return fs.writev(fd, buffers, ...args)
+  }
+
+  return new Promise((resolve, reject) => {
+    fs.writev(fd, buffers, ...args, (err, bytesWritten, buffers) => {
+      if (err) return reject(err)
+      resolve({ bytesWritten, buffers })
+    })
+  })
+}
+
+// fs.realpath.native sometimes not available if fs is monkey-patched
+if (typeof fs.realpath.native === 'function') {
+  exports.realpath.native = u(fs.realpath.native)
+} else {
+  process.emitWarning(
+    'fs.realpath.native is not a function. Is fs being monkey-patched?',
+    'Warning', 'fs-extra-WARN0003'
   )
 }
 
-function realpath (p, cache, cb) {
-  if (ok) {
-    return origRealpath(p, cache, cb)
-  }
-
-  if (typeof cache === 'function') {
-    cb = cache
-    cache = null
-  }
-  origRealpath(p, cache, function (er, result) {
-    if (newError(er)) {
-      old.realpath(p, cache, cb)
-    } else {
-      cb(er, result)
-    }
-  })
-}
-
-function realpathSync (p, cache) {
-  if (ok) {
-    return origRealpathSync(p, cache)
-  }
-
-  try {
-    return origRealpathSync(p, cache)
-  } catch (er) {
-    if (newError(er)) {
-      return old.realpathSync(p, cache)
-    } else {
-      throw er
-    }
-  }
-}
-
-function monkeypatch () {
-  fs.realpath = realpath
-  fs.realpathSync = realpathSync
-}
-
-function unmonkeypatch () {
-  fs.realpath = origRealpath
-  fs.realpathSync = origRealpathSync
-}
-
 
 /***/ }),
 
-/***/ 1734:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-var pathModule = __nccwpck_require__(1017);
-var isWindows = process.platform === 'win32';
-var fs = __nccwpck_require__(7147);
-
-// JavaScript implementation of realpath, ported from node pre-v6
-
-var DEBUG = process.env.NODE_DEBUG && /fs/.test(process.env.NODE_DEBUG);
-
-function rethrow() {
-  // Only enable in debug mode. A backtrace uses ~1000 bytes of heap space and
-  // is fairly slow to generate.
-  var callback;
-  if (DEBUG) {
-    var backtrace = new Error;
-    callback = debugCallback;
-  } else
-    callback = missingCallback;
-
-  return callback;
-
-  function debugCallback(err) {
-    if (err) {
-      backtrace.message = err.message;
-      err = backtrace;
-      missingCallback(err);
-    }
-  }
-
-  function missingCallback(err) {
-    if (err) {
-      if (process.throwDeprecation)
-        throw err;  // Forgot a callback but don't know where? Use NODE_DEBUG=fs
-      else if (!process.noDeprecation) {
-        var msg = 'fs: missing callback ' + (err.stack || err.message);
-        if (process.traceDeprecation)
-          console.trace(msg);
-        else
-          console.error(msg);
-      }
-    }
-  }
-}
-
-function maybeCallback(cb) {
-  return typeof cb === 'function' ? cb : rethrow();
-}
-
-var normalize = pathModule.normalize;
-
-// Regexp that finds the next partion of a (partial) path
-// result is [base_with_slash, base], e.g. ['somedir/', 'somedir']
-if (isWindows) {
-  var nextPartRe = /(.*?)(?:[\/\\]+|$)/g;
-} else {
-  var nextPartRe = /(.*?)(?:[\/]+|$)/g;
-}
-
-// Regex to find the device root, including trailing slash. E.g. 'c:\\'.
-if (isWindows) {
-  var splitRootRe = /^(?:[a-zA-Z]:|[\\\/]{2}[^\\\/]+[\\\/][^\\\/]+)?[\\\/]*/;
-} else {
-  var splitRootRe = /^[\/]*/;
-}
-
-exports.realpathSync = function realpathSync(p, cache) {
-  // make p is absolute
-  p = pathModule.resolve(p);
-
-  if (cache && Object.prototype.hasOwnProperty.call(cache, p)) {
-    return cache[p];
-  }
-
-  var original = p,
-      seenLinks = {},
-      knownHard = {};
-
-  // current character position in p
-  var pos;
-  // the partial path so far, including a trailing slash if any
-  var current;
-  // the partial path without a trailing slash (except when pointing at a root)
-  var base;
-  // the partial path scanned in the previous round, with slash
-  var previous;
-
-  start();
-
-  function start() {
-    // Skip over roots
-    var m = splitRootRe.exec(p);
-    pos = m[0].length;
-    current = m[0];
-    base = m[0];
-    previous = '';
-
-    // On windows, check that the root exists. On unix there is no need.
-    if (isWindows && !knownHard[base]) {
-      fs.lstatSync(base);
-      knownHard[base] = true;
-    }
-  }
-
-  // walk down the path, swapping out linked pathparts for their real
-  // values
-  // NB: p.length changes.
-  while (pos < p.length) {
-    // find the next part
-    nextPartRe.lastIndex = pos;
-    var result = nextPartRe.exec(p);
-    previous = current;
-    current += result[0];
-    base = previous + result[1];
-    pos = nextPartRe.lastIndex;
-
-    // continue if not a symlink
-    if (knownHard[base] || (cache && cache[base] === base)) {
-      continue;
-    }
-
-    var resolvedLink;
-    if (cache && Object.prototype.hasOwnProperty.call(cache, base)) {
-      // some known symbolic link.  no need to stat again.
-      resolvedLink = cache[base];
-    } else {
-      var stat = fs.lstatSync(base);
-      if (!stat.isSymbolicLink()) {
-        knownHard[base] = true;
-        if (cache) cache[base] = base;
-        continue;
-      }
-
-      // read the link if it wasn't read before
-      // dev/ino always return 0 on windows, so skip the check.
-      var linkTarget = null;
-      if (!isWindows) {
-        var id = stat.dev.toString(32) + ':' + stat.ino.toString(32);
-        if (seenLinks.hasOwnProperty(id)) {
-          linkTarget = seenLinks[id];
-        }
-      }
-      if (linkTarget === null) {
-        fs.statSync(base);
-        linkTarget = fs.readlinkSync(base);
-      }
-      resolvedLink = pathModule.resolve(previous, linkTarget);
-      // track this, if given a cache.
-      if (cache) cache[base] = resolvedLink;
-      if (!isWindows) seenLinks[id] = linkTarget;
-    }
-
-    // resolve the link, then start over
-    p = pathModule.resolve(resolvedLink, p.slice(pos));
-    start();
-  }
-
-  if (cache) cache[original] = p;
-
-  return p;
-};
-
-
-exports.realpath = function realpath(p, cache, cb) {
-  if (typeof cb !== 'function') {
-    cb = maybeCallback(cache);
-    cache = null;
-  }
-
-  // make p is absolute
-  p = pathModule.resolve(p);
-
-  if (cache && Object.prototype.hasOwnProperty.call(cache, p)) {
-    return process.nextTick(cb.bind(null, null, cache[p]));
-  }
-
-  var original = p,
-      seenLinks = {},
-      knownHard = {};
-
-  // current character position in p
-  var pos;
-  // the partial path so far, including a trailing slash if any
-  var current;
-  // the partial path without a trailing slash (except when pointing at a root)
-  var base;
-  // the partial path scanned in the previous round, with slash
-  var previous;
-
-  start();
-
-  function start() {
-    // Skip over roots
-    var m = splitRootRe.exec(p);
-    pos = m[0].length;
-    current = m[0];
-    base = m[0];
-    previous = '';
-
-    // On windows, check that the root exists. On unix there is no need.
-    if (isWindows && !knownHard[base]) {
-      fs.lstat(base, function(err) {
-        if (err) return cb(err);
-        knownHard[base] = true;
-        LOOP();
-      });
-    } else {
-      process.nextTick(LOOP);
-    }
-  }
-
-  // walk down the path, swapping out linked pathparts for their real
-  // values
-  function LOOP() {
-    // stop if scanned past end of path
-    if (pos >= p.length) {
-      if (cache) cache[original] = p;
-      return cb(null, p);
-    }
-
-    // find the next part
-    nextPartRe.lastIndex = pos;
-    var result = nextPartRe.exec(p);
-    previous = current;
-    current += result[0];
-    base = previous + result[1];
-    pos = nextPartRe.lastIndex;
-
-    // continue if not a symlink
-    if (knownHard[base] || (cache && cache[base] === base)) {
-      return process.nextTick(LOOP);
-    }
-
-    if (cache && Object.prototype.hasOwnProperty.call(cache, base)) {
-      // known symbolic link.  no need to stat again.
-      return gotResolvedLink(cache[base]);
-    }
-
-    return fs.lstat(base, gotStat);
-  }
-
-  function gotStat(err, stat) {
-    if (err) return cb(err);
-
-    // if not a symlink, skip to the next path part
-    if (!stat.isSymbolicLink()) {
-      knownHard[base] = true;
-      if (cache) cache[base] = base;
-      return process.nextTick(LOOP);
-    }
-
-    // stat & read the link if not read before
-    // call gotTarget as soon as the link target is known
-    // dev/ino always return 0 on windows, so skip the check.
-    if (!isWindows) {
-      var id = stat.dev.toString(32) + ':' + stat.ino.toString(32);
-      if (seenLinks.hasOwnProperty(id)) {
-        return gotTarget(null, seenLinks[id], base);
-      }
-    }
-    fs.stat(base, function(err) {
-      if (err) return cb(err);
-
-      fs.readlink(base, function(err, target) {
-        if (!isWindows) seenLinks[id] = target;
-        gotTarget(err, target);
-      });
-    });
-  }
-
-  function gotTarget(err, target, base) {
-    if (err) return cb(err);
-
-    var resolvedLink = pathModule.resolve(previous, target);
-    if (cache) cache[base] = resolvedLink;
-    gotResolvedLink(resolvedLink);
-  }
-
-  function gotResolvedLink(resolvedLink) {
-    // resolve the link, then start over
-    p = pathModule.resolve(resolvedLink, p.slice(pos));
-    start();
-  }
-};
-
-
-/***/ }),
-
-/***/ 7158:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-var __webpack_unused_export__;
-/* unused reexport */ __nccwpck_require__(9479)
-/* unused reexport */ __nccwpck_require__(3284)
-exports.Writer = __nccwpck_require__(8680)
-
-exports.$B = {
-  Reader: __nccwpck_require__(8413),
-  Writer: __nccwpck_require__(2539)
-}
-
-exports.Lv = {
-  Reader: __nccwpck_require__(4486),
-  Writer: __nccwpck_require__(4745)
-}
-
-exports.rU = {
-  Reader: __nccwpck_require__(8337),
-  Writer: __nccwpck_require__(404)
-}
-
-exports._S = {
-  Reader: __nccwpck_require__(7328),
-  Writer: __nccwpck_require__(2071)
-}
-
-__webpack_unused_export__ = __webpack_unused_export__ = exports.Lv.Reader
-__webpack_unused_export__ = __webpack_unused_export__ = exports.$B.Reader
-__webpack_unused_export__ = __webpack_unused_export__ = exports.rU.Reader
-__webpack_unused_export__ = __webpack_unused_export__ = exports._S.Reader
-
-exports.Writer.Dir = __webpack_unused_export__ = exports.Lv.Writer
-exports.Writer.File = __webpack_unused_export__ = exports.$B.Writer
-exports.Writer.Link = __webpack_unused_export__ = exports.rU.Writer
-exports.Writer.Proxy = __webpack_unused_export__ = exports._S.Writer
-
-/* unused reexport */ __nccwpck_require__(3317)
-
-
-/***/ }),
-
-/***/ 9479:
+/***/ 5630:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-// the parent class for all fstreams.
+"use strict";
 
-module.exports = Abstract
 
-var Stream = (__nccwpck_require__(2781).Stream)
-var inherits = __nccwpck_require__(4124)
-
-function Abstract () {
-  Stream.call(this)
-}
-
-inherits(Abstract, Stream)
-
-Abstract.prototype.on = function (ev, fn) {
-  if (ev === 'ready' && this.ready) {
-    process.nextTick(fn.bind(this))
-  } else {
-    Stream.prototype.on.call(this, ev, fn)
-  }
-  return this
-}
-
-Abstract.prototype.abort = function () {
-  this._aborted = true
-  this.emit('abort')
-}
-
-Abstract.prototype.destroy = function () {}
-
-Abstract.prototype.warn = function (msg, code) {
-  var self = this
-  var er = decorate(msg, code, self)
-  if (!self.listeners('warn')) {
-    console.error('%s %s\n' +
-    'path = %s\n' +
-    'syscall = %s\n' +
-    'fstream_type = %s\n' +
-    'fstream_path = %s\n' +
-    'fstream_unc_path = %s\n' +
-    'fstream_class = %s\n' +
-    'fstream_stack =\n%s\n',
-      code || 'UNKNOWN',
-      er.stack,
-      er.path,
-      er.syscall,
-      er.fstream_type,
-      er.fstream_path,
-      er.fstream_unc_path,
-      er.fstream_class,
-      er.fstream_stack.join('\n'))
-  } else {
-    self.emit('warn', er)
-  }
-}
-
-Abstract.prototype.info = function (msg, code) {
-  this.emit('info', msg, code)
-}
-
-Abstract.prototype.error = function (msg, code, th) {
-  var er = decorate(msg, code, this)
-  if (th) throw er
-  else this.emit('error', er)
-}
-
-function decorate (er, code, self) {
-  if (!(er instanceof Error)) er = new Error(er)
-  er.code = er.code || code
-  er.path = er.path || self.path
-  er.fstream_type = er.fstream_type || self.type
-  er.fstream_path = er.fstream_path || self.path
-  if (self._path !== self.path) {
-    er.fstream_unc_path = er.fstream_unc_path || self._path
-  }
-  if (self.linkpath) {
-    er.fstream_linkpath = er.fstream_linkpath || self.linkpath
-  }
-  er.fstream_class = er.fstream_class || self.constructor.name
-  er.fstream_stack = er.fstream_stack ||
-    new Error().stack.split(/\n/).slice(3).map(function (s) {
-      return s.replace(/^ {4}at /, '')
-    })
-
-  return er
+module.exports = {
+  // Export promiseified graceful-fs:
+  ...__nccwpck_require__(1176),
+  // Export extra methods:
+  ...__nccwpck_require__(1335),
+  ...__nccwpck_require__(6970),
+  ...__nccwpck_require__(55),
+  ...__nccwpck_require__(213),
+  ...__nccwpck_require__(8605),
+  ...__nccwpck_require__(1497),
+  ...__nccwpck_require__(1832),
+  ...__nccwpck_require__(3835),
+  ...__nccwpck_require__(7357)
 }
 
 
 /***/ }),
 
-/***/ 3317:
-/***/ ((module) => {
-
-module.exports = collect
-
-function collect (stream) {
-  if (stream._collected) return
-
-  if (stream._paused) return stream.on('resume', collect.bind(null, stream))
-
-  stream._collected = true
-  stream.pause()
-
-  stream.on('data', save)
-  stream.on('end', save)
-  var buf = []
-  function save (b) {
-    if (typeof b === 'string') b = new Buffer(b)
-    if (Buffer.isBuffer(b) && !b.length) return
-    buf.push(b)
-  }
-
-  stream.on('entry', saveEntry)
-  var entryBuffer = []
-  function saveEntry (e) {
-    collect(e)
-    entryBuffer.push(e)
-  }
-
-  stream.on('proxy', proxyPause)
-  function proxyPause (p) {
-    p.pause()
-  }
-
-  // replace the pipe method with a new version that will
-  // unlock the buffered stuff.  if you just call .pipe()
-  // without a destination, then it'll re-play the events.
-  stream.pipe = (function (orig) {
-    return function (dest) {
-      // console.error(' === open the pipes', dest && dest.path)
-
-      // let the entries flow through one at a time.
-      // Once they're all done, then we can resume completely.
-      var e = 0
-      ;(function unblockEntry () {
-        var entry = entryBuffer[e++]
-        // console.error(" ==== unblock entry", entry && entry.path)
-        if (!entry) return resume()
-        entry.on('end', unblockEntry)
-        if (dest) dest.add(entry)
-        else stream.emit('entry', entry)
-      })()
-
-      function resume () {
-        stream.removeListener('entry', saveEntry)
-        stream.removeListener('data', save)
-        stream.removeListener('end', save)
-
-        stream.pipe = orig
-        if (dest) stream.pipe(dest)
-
-        buf.forEach(function (b) {
-          if (b) stream.emit('data', b)
-          else stream.emit('end')
-        })
-
-        stream.resume()
-      }
-
-      return dest
-    }
-  })(stream.pipe)
-}
-
-
-/***/ }),
-
-/***/ 4486:
+/***/ 213:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-// A thing that emits "entry" events with Reader objects
-// Pausing it causes it to stop emitting entry events, and also
-// pauses the current entry if there is one.
+"use strict";
 
-module.exports = DirReader
 
-var fs = __nccwpck_require__(7758)
-var inherits = __nccwpck_require__(4124)
-var path = __nccwpck_require__(1017)
-var Reader = __nccwpck_require__(3284)
-var assert = (__nccwpck_require__(9491).ok)
+const u = (__nccwpck_require__(9046).fromPromise)
+const jsonFile = __nccwpck_require__(8970)
 
-inherits(DirReader, Reader)
+jsonFile.outputJson = u(__nccwpck_require__(531))
+jsonFile.outputJsonSync = __nccwpck_require__(9421)
+// aliases
+jsonFile.outputJSON = jsonFile.outputJson
+jsonFile.outputJSONSync = jsonFile.outputJsonSync
+jsonFile.writeJSON = jsonFile.writeJson
+jsonFile.writeJSONSync = jsonFile.writeJsonSync
+jsonFile.readJSON = jsonFile.readJson
+jsonFile.readJSONSync = jsonFile.readJsonSync
 
-function DirReader (props) {
-  var self = this
-  if (!(self instanceof DirReader)) {
-    throw new Error('DirReader must be called as constructor.')
-  }
-
-  // should already be established as a Directory type
-  if (props.type !== 'Directory' || !props.Directory) {
-    throw new Error('Non-directory type ' + props.type)
-  }
-
-  self.entries = null
-  self._index = -1
-  self._paused = false
-  self._length = -1
-
-  if (props.sort) {
-    this.sort = props.sort
-  }
-
-  Reader.call(this, props)
-}
-
-DirReader.prototype._getEntries = function () {
-  var self = this
-
-  // race condition.  might pause() before calling _getEntries,
-  // and then resume, and try to get them a second time.
-  if (self._gotEntries) return
-  self._gotEntries = true
-
-  fs.readdir(self._path, function (er, entries) {
-    if (er) return self.error(er)
-
-    self.entries = entries
-
-    self.emit('entries', entries)
-    if (self._paused) self.once('resume', processEntries)
-    else processEntries()
-
-    function processEntries () {
-      self._length = self.entries.length
-      if (typeof self.sort === 'function') {
-        self.entries = self.entries.sort(self.sort.bind(self))
-      }
-      self._read()
-    }
-  })
-}
-
-// start walking the dir, and emit an "entry" event for each one.
-DirReader.prototype._read = function () {
-  var self = this
-
-  if (!self.entries) return self._getEntries()
-
-  if (self._paused || self._currentEntry || self._aborted) {
-    // console.error('DR paused=%j, current=%j, aborted=%j', self._paused, !!self._currentEntry, self._aborted)
-    return
-  }
-
-  self._index++
-  if (self._index >= self.entries.length) {
-    if (!self._ended) {
-      self._ended = true
-      self.emit('end')
-      self.emit('close')
-    }
-    return
-  }
-
-  // ok, handle this one, then.
-
-  // save creating a proxy, by stat'ing the thing now.
-  var p = path.resolve(self._path, self.entries[self._index])
-  assert(p !== self._path)
-  assert(self.entries[self._index])
-
-  // set this to prevent trying to _read() again in the stat time.
-  self._currentEntry = p
-  fs[ self.props.follow ? 'stat' : 'lstat' ](p, function (er, stat) {
-    if (er) return self.error(er)
-
-    var who = self._proxy || self
-
-    stat.path = p
-    stat.basename = path.basename(p)
-    stat.dirname = path.dirname(p)
-    var childProps = self.getChildProps.call(who, stat)
-    childProps.path = p
-    childProps.basename = path.basename(p)
-    childProps.dirname = path.dirname(p)
-
-    var entry = Reader(childProps, stat)
-
-    // console.error("DR Entry", p, stat.size)
-
-    self._currentEntry = entry
-
-    // "entry" events are for direct entries in a specific dir.
-    // "child" events are for any and all children at all levels.
-    // This nomenclature is not completely final.
-
-    entry.on('pause', function (who) {
-      if (!self._paused && !entry._disowned) {
-        self.pause(who)
-      }
-    })
-
-    entry.on('resume', function (who) {
-      if (self._paused && !entry._disowned) {
-        self.resume(who)
-      }
-    })
-
-    entry.on('stat', function (props) {
-      self.emit('_entryStat', entry, props)
-      if (entry._aborted) return
-      if (entry._paused) {
-        entry.once('resume', function () {
-          self.emit('entryStat', entry, props)
-        })
-      } else self.emit('entryStat', entry, props)
-    })
-
-    entry.on('ready', function EMITCHILD () {
-      // console.error("DR emit child", entry._path)
-      if (self._paused) {
-        // console.error("  DR emit child - try again later")
-        // pause the child, and emit the "entry" event once we drain.
-        // console.error("DR pausing child entry")
-        entry.pause(self)
-        return self.once('resume', EMITCHILD)
-      }
-
-      // skip over sockets.  they can't be piped around properly,
-      // so there's really no sense even acknowledging them.
-      // if someone really wants to see them, they can listen to
-      // the "socket" events.
-      if (entry.type === 'Socket') {
-        self.emit('socket', entry)
-      } else {
-        self.emitEntry(entry)
-      }
-    })
-
-    var ended = false
-    entry.on('close', onend)
-    entry.on('disown', onend)
-    function onend () {
-      if (ended) return
-      ended = true
-      self.emit('childEnd', entry)
-      self.emit('entryEnd', entry)
-      self._currentEntry = null
-      if (!self._paused) {
-        self._read()
-      }
-    }
-
-    // XXX Remove this.  Works in node as of 0.6.2 or so.
-    // Long filenames should not break stuff.
-    entry.on('error', function (er) {
-      if (entry._swallowErrors) {
-        self.warn(er)
-        entry.emit('end')
-        entry.emit('close')
-      } else {
-        self.emit('error', er)
-      }
-    })
-
-    // proxy up some events.
-    ;[
-      'child',
-      'childEnd',
-      'warn'
-    ].forEach(function (ev) {
-      entry.on(ev, self.emit.bind(self, ev))
-    })
-  })
-}
-
-DirReader.prototype.disown = function (entry) {
-  entry.emit('beforeDisown')
-  entry._disowned = true
-  entry.parent = entry.root = null
-  if (entry === this._currentEntry) {
-    this._currentEntry = null
-  }
-  entry.emit('disown')
-}
-
-DirReader.prototype.getChildProps = function () {
-  return {
-    depth: this.depth + 1,
-    root: this.root || this,
-    parent: this,
-    follow: this.follow,
-    filter: this.filter,
-    sort: this.props.sort,
-    hardlinks: this.props.hardlinks
-  }
-}
-
-DirReader.prototype.pause = function (who) {
-  var self = this
-  if (self._paused) return
-  who = who || self
-  self._paused = true
-  if (self._currentEntry && self._currentEntry.pause) {
-    self._currentEntry.pause(who)
-  }
-  self.emit('pause', who)
-}
-
-DirReader.prototype.resume = function (who) {
-  var self = this
-  if (!self._paused) return
-  who = who || self
-
-  self._paused = false
-  // console.error('DR Emit Resume', self._path)
-  self.emit('resume', who)
-  if (self._paused) {
-    // console.error('DR Re-paused', self._path)
-    return
-  }
-
-  if (self._currentEntry) {
-    if (self._currentEntry.resume) self._currentEntry.resume(who)
-  } else self._read()
-}
-
-DirReader.prototype.emitEntry = function (entry) {
-  this.emit('entry', entry)
-  this.emit('child', entry)
-}
+module.exports = jsonFile
 
 
 /***/ }),
 
-/***/ 4745:
+/***/ 8970:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-// It is expected that, when .add() returns false, the consumer
-// of the DirWriter will pause until a "drain" event occurs. Note
-// that this is *almost always going to be the case*, unless the
-// thing being written is some sort of unsupported type, and thus
-// skipped over.
+"use strict";
 
-module.exports = DirWriter
 
-var Writer = __nccwpck_require__(8680)
-var inherits = __nccwpck_require__(4124)
-var mkdir = __nccwpck_require__(7812)
-var path = __nccwpck_require__(1017)
-var collect = __nccwpck_require__(3317)
+const jsonFile = __nccwpck_require__(6160)
 
-inherits(DirWriter, Writer)
-
-function DirWriter (props) {
-  var self = this
-  if (!(self instanceof DirWriter)) {
-    self.error('DirWriter must be called as constructor.', null, true)
-  }
-
-  // should already be established as a Directory type
-  if (props.type !== 'Directory' || !props.Directory) {
-    self.error('Non-directory type ' + props.type + ' ' +
-      JSON.stringify(props), null, true)
-  }
-
-  Writer.call(this, props)
-}
-
-DirWriter.prototype._create = function () {
-  var self = this
-  mkdir(self._path, Writer.dirmode, function (er) {
-    if (er) return self.error(er)
-    // ready to start getting entries!
-    self.ready = true
-    self.emit('ready')
-    self._process()
-  })
-}
-
-// a DirWriter has an add(entry) method, but its .write() doesn't
-// do anything.  Why a no-op rather than a throw?  Because this
-// leaves open the door for writing directory metadata for
-// gnu/solaris style dumpdirs.
-DirWriter.prototype.write = function () {
-  return true
-}
-
-DirWriter.prototype.end = function () {
-  this._ended = true
-  this._process()
-}
-
-DirWriter.prototype.add = function (entry) {
-  var self = this
-
-  // console.error('\tadd', entry._path, '->', self._path)
-  collect(entry)
-  if (!self.ready || self._currentEntry) {
-    self._buffer.push(entry)
-    return false
-  }
-
-  // create a new writer, and pipe the incoming entry into it.
-  if (self._ended) {
-    return self.error('add after end')
-  }
-
-  self._buffer.push(entry)
-  self._process()
-
-  return this._buffer.length === 0
-}
-
-DirWriter.prototype._process = function () {
-  var self = this
-
-  // console.error('DW Process p=%j', self._processing, self.basename)
-
-  if (self._processing) return
-
-  var entry = self._buffer.shift()
-  if (!entry) {
-    // console.error("DW Drain")
-    self.emit('drain')
-    if (self._ended) self._finish()
-    return
-  }
-
-  self._processing = true
-  // console.error("DW Entry", entry._path)
-
-  self.emit('entry', entry)
-
-  // ok, add this entry
-  //
-  // don't allow recursive copying
-  var p = entry
-  var pp
-  do {
-    pp = p._path || p.path
-    if (pp === self.root._path || pp === self._path ||
-      (pp && pp.indexOf(self._path) === 0)) {
-      // console.error('DW Exit (recursive)', entry.basename, self._path)
-      self._processing = false
-      if (entry._collected) entry.pipe()
-      return self._process()
-    }
-    p = p.parent
-  } while (p)
-
-  // console.error("DW not recursive")
-
-  // chop off the entry's root dir, replace with ours
-  var props = {
-    parent: self,
-    root: self.root || self,
-    type: entry.type,
-    depth: self.depth + 1
-  }
-
-  pp = entry._path || entry.path || entry.props.path
-  if (entry.parent) {
-    pp = pp.substr(entry.parent._path.length + 1)
-  }
-  // get rid of any ../../ shenanigans
-  props.path = path.join(self.path, path.join('/', pp))
-
-  // if i have a filter, the child should inherit it.
-  props.filter = self.filter
-
-  // all the rest of the stuff, copy over from the source.
-  Object.keys(entry.props).forEach(function (k) {
-    if (!props.hasOwnProperty(k)) {
-      props[k] = entry.props[k]
-    }
-  })
-
-  // not sure at this point what kind of writer this is.
-  var child = self._currentChild = new Writer(props)
-  child.on('ready', function () {
-    // console.error("DW Child Ready", child.type, child._path)
-    // console.error("  resuming", entry._path)
-    entry.pipe(child)
-    entry.resume()
-  })
-
-  // XXX Make this work in node.
-  // Long filenames should not break stuff.
-  child.on('error', function (er) {
-    if (child._swallowErrors) {
-      self.warn(er)
-      child.emit('end')
-      child.emit('close')
-    } else {
-      self.emit('error', er)
-    }
-  })
-
-  // we fire _end internally *after* end, so that we don't move on
-  // until any "end" listeners have had their chance to do stuff.
-  child.on('close', onend)
-  var ended = false
-  function onend () {
-    if (ended) return
-    ended = true
-    // console.error("* DW Child end", child.basename)
-    self._currentChild = null
-    self._processing = false
-    self._process()
-  }
+module.exports = {
+  // jsonfile exports
+  readJson: jsonFile.readFile,
+  readJsonSync: jsonFile.readFileSync,
+  writeJson: jsonFile.writeFile,
+  writeJsonSync: jsonFile.writeFileSync
 }
 
 
 /***/ }),
 
-/***/ 8413:
+/***/ 9421:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-// Basically just a wrapper around an fs.ReadStream
+"use strict";
 
-module.exports = FileReader
 
-var fs = __nccwpck_require__(7758)
-var inherits = __nccwpck_require__(4124)
-var Reader = __nccwpck_require__(3284)
-var EOF = {EOF: true}
-var CLOSE = {CLOSE: true}
+const { stringify } = __nccwpck_require__(5902)
+const { outputFileSync } = __nccwpck_require__(1832)
 
-inherits(FileReader, Reader)
+function outputJsonSync (file, data, options) {
+  const str = stringify(data, options)
 
-function FileReader (props) {
-  // console.error("    FR create", props.path, props.size, new Error().stack)
-  var self = this
-  if (!(self instanceof FileReader)) {
-    throw new Error('FileReader must be called as constructor.')
-  }
-
-  // should already be established as a File type
-  // XXX Todo: preserve hardlinks by tracking dev+inode+nlink,
-  // with a HardLinkReader class.
-  if (!((props.type === 'Link' && props.Link) ||
-    (props.type === 'File' && props.File))) {
-    throw new Error('Non-file type ' + props.type)
-  }
-
-  self._buffer = []
-  self._bytesEmitted = 0
-  Reader.call(self, props)
+  outputFileSync(file, str, options)
 }
 
-FileReader.prototype._getStream = function () {
-  var self = this
-  var stream = self._stream = fs.createReadStream(self._path, self.props)
-
-  if (self.props.blksize) {
-    stream.bufferSize = self.props.blksize
-  }
-
-  stream.on('open', self.emit.bind(self, 'open'))
-
-  stream.on('data', function (c) {
-    // console.error('\t\t%d %s', c.length, self.basename)
-    self._bytesEmitted += c.length
-    // no point saving empty chunks
-    if (!c.length) {
-      return
-    } else if (self._paused || self._buffer.length) {
-      self._buffer.push(c)
-      self._read()
-    } else self.emit('data', c)
-  })
-
-  stream.on('end', function () {
-    if (self._paused || self._buffer.length) {
-      // console.error('FR Buffering End', self._path)
-      self._buffer.push(EOF)
-      self._read()
-    } else {
-      self.emit('end')
-    }
-
-    if (self._bytesEmitted !== self.props.size) {
-      self.error("Didn't get expected byte count\n" +
-        'expect: ' + self.props.size + '\n' +
-        'actual: ' + self._bytesEmitted)
-    }
-  })
-
-  stream.on('close', function () {
-    if (self._paused || self._buffer.length) {
-      // console.error('FR Buffering Close', self._path)
-      self._buffer.push(CLOSE)
-      self._read()
-    } else {
-      // console.error('FR close 1', self._path)
-      self.emit('close')
-    }
-  })
-
-  stream.on('error', function (e) {
-    self.emit('error', e)
-  })
-
-  self._read()
-}
-
-FileReader.prototype._read = function () {
-  var self = this
-  // console.error('FR _read', self._path)
-  if (self._paused) {
-    // console.error('FR _read paused', self._path)
-    return
-  }
-
-  if (!self._stream) {
-    // console.error('FR _getStream calling', self._path)
-    return self._getStream()
-  }
-
-  // clear out the buffer, if there is one.
-  if (self._buffer.length) {
-    // console.error('FR _read has buffer', self._buffer.length, self._path)
-    var buf = self._buffer
-    for (var i = 0, l = buf.length; i < l; i++) {
-      var c = buf[i]
-      if (c === EOF) {
-        // console.error('FR Read emitting buffered end', self._path)
-        self.emit('end')
-      } else if (c === CLOSE) {
-        // console.error('FR Read emitting buffered close', self._path)
-        self.emit('close')
-      } else {
-        // console.error('FR Read emitting buffered data', self._path)
-        self.emit('data', c)
-      }
-
-      if (self._paused) {
-        // console.error('FR Read Re-pausing at '+i, self._path)
-        self._buffer = buf.slice(i)
-        return
-      }
-    }
-    self._buffer.length = 0
-  }
-// console.error("FR _read done")
-// that's about all there is to it.
-}
-
-FileReader.prototype.pause = function (who) {
-  var self = this
-  // console.error('FR Pause', self._path)
-  if (self._paused) return
-  who = who || self
-  self._paused = true
-  if (self._stream) self._stream.pause()
-  self.emit('pause', who)
-}
-
-FileReader.prototype.resume = function (who) {
-  var self = this
-  // console.error('FR Resume', self._path)
-  if (!self._paused) return
-  who = who || self
-  self.emit('resume', who)
-  self._paused = false
-  if (self._stream) self._stream.resume()
-  self._read()
-}
+module.exports = outputJsonSync
 
 
 /***/ }),
 
-/***/ 2539:
+/***/ 531:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-module.exports = FileWriter
+"use strict";
 
-var fs = __nccwpck_require__(7758)
-var Writer = __nccwpck_require__(8680)
-var inherits = __nccwpck_require__(4124)
-var EOF = {}
 
-inherits(FileWriter, Writer)
+const { stringify } = __nccwpck_require__(5902)
+const { outputFile } = __nccwpck_require__(1832)
 
-function FileWriter (props) {
-  var self = this
-  if (!(self instanceof FileWriter)) {
-    throw new Error('FileWriter must be called as constructor.')
-  }
+async function outputJson (file, data, options = {}) {
+  const str = stringify(data, options)
 
-  // should already be established as a File type
-  if (props.type !== 'File' || !props.File) {
-    throw new Error('Non-file type ' + props.type)
-  }
-
-  self._buffer = []
-  self._bytesWritten = 0
-
-  Writer.call(this, props)
+  await outputFile(file, str, options)
 }
 
-FileWriter.prototype._create = function () {
-  var self = this
-  if (self._stream) return
-
-  var so = {}
-  if (self.props.flags) so.flags = self.props.flags
-  so.mode = Writer.filemode
-  if (self._old && self._old.blksize) so.bufferSize = self._old.blksize
-
-  self._stream = fs.createWriteStream(self._path, so)
-
-  self._stream.on('open', function () {
-    // console.error("FW open", self._buffer, self._path)
-    self.ready = true
-    self._buffer.forEach(function (c) {
-      if (c === EOF) self._stream.end()
-      else self._stream.write(c)
-    })
-    self.emit('ready')
-    // give this a kick just in case it needs it.
-    self.emit('drain')
-  })
-
-  self._stream.on('error', function (er) { self.emit('error', er) })
-
-  self._stream.on('drain', function () { self.emit('drain') })
-
-  self._stream.on('close', function () {
-    // console.error('\n\nFW Stream Close', self._path, self.size)
-    self._finish()
-  })
-}
-
-FileWriter.prototype.write = function (c) {
-  var self = this
-
-  self._bytesWritten += c.length
-
-  if (!self.ready) {
-    if (!Buffer.isBuffer(c) && typeof c !== 'string') {
-      throw new Error('invalid write data')
-    }
-    self._buffer.push(c)
-    return false
-  }
-
-  var ret = self._stream.write(c)
-  // console.error('\t-- fw wrote, _stream says', ret, self._stream._queue.length)
-
-  // allow 2 buffered writes, because otherwise there's just too
-  // much stop and go bs.
-  if (ret === false && self._stream._queue) {
-    return self._stream._queue.length <= 2
-  } else {
-    return ret
-  }
-}
-
-FileWriter.prototype.end = function (c) {
-  var self = this
-
-  if (c) self.write(c)
-
-  if (!self.ready) {
-    self._buffer.push(EOF)
-    return false
-  }
-
-  return self._stream.end()
-}
-
-FileWriter.prototype._finish = function () {
-  var self = this
-  if (typeof self.size === 'number' && self._bytesWritten !== self.size) {
-    self.error(
-      'Did not get expected byte count.\n' +
-      'expect: ' + self.size + '\n' +
-      'actual: ' + self._bytesWritten)
-  }
-  Writer.prototype._finish.call(self)
-}
+module.exports = outputJson
 
 
 /***/ }),
 
-/***/ 1600:
-/***/ ((module) => {
-
-module.exports = getType
-
-function getType (st) {
-  var types = [
-    'Directory',
-    'File',
-    'SymbolicLink',
-    'Link', // special for hardlinks from tarballs
-    'BlockDevice',
-    'CharacterDevice',
-    'FIFO',
-    'Socket'
-  ]
-  var type
-
-  if (st.type && types.indexOf(st.type) !== -1) {
-    st[st.type] = true
-    return st.type
-  }
-
-  for (var i = 0, l = types.length; i < l; i++) {
-    type = types[i]
-    var is = st[type] || st['is' + type]
-    if (typeof is === 'function') is = is.call(st)
-    if (is) {
-      st[type] = true
-      st.type = type
-      return type
-    }
-  }
-
-  return null
-}
-
-
-/***/ }),
-
-/***/ 8337:
+/***/ 8605:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-// Basically just a wrapper around an fs.readlink
-//
-// XXX: Enhance this to support the Link type, by keeping
-// a lookup table of {<dev+inode>:<path>}, so that hardlinks
-// can be preserved in tarballs.
+"use strict";
 
-module.exports = LinkReader
+const u = (__nccwpck_require__(9046).fromPromise)
+const { makeDir: _makeDir, makeDirSync } = __nccwpck_require__(2751)
+const makeDir = u(_makeDir)
 
-var fs = __nccwpck_require__(7758)
-var inherits = __nccwpck_require__(4124)
-var Reader = __nccwpck_require__(3284)
-
-inherits(LinkReader, Reader)
-
-function LinkReader (props) {
-  var self = this
-  if (!(self instanceof LinkReader)) {
-    throw new Error('LinkReader must be called as constructor.')
-  }
-
-  if (!((props.type === 'Link' && props.Link) ||
-    (props.type === 'SymbolicLink' && props.SymbolicLink))) {
-    throw new Error('Non-link type ' + props.type)
-  }
-
-  Reader.call(self, props)
-}
-
-// When piping a LinkReader into a LinkWriter, we have to
-// already have the linkpath property set, so that has to
-// happen *before* the "ready" event, which means we need to
-// override the _stat method.
-LinkReader.prototype._stat = function (currentStat) {
-  var self = this
-  fs.readlink(self._path, function (er, linkpath) {
-    if (er) return self.error(er)
-    self.linkpath = self.props.linkpath = linkpath
-    self.emit('linkpath', linkpath)
-    Reader.prototype._stat.call(self, currentStat)
-  })
-}
-
-LinkReader.prototype._read = function () {
-  var self = this
-  if (self._paused) return
-  // basically just a no-op, since we got all the info we need
-  // from the _stat method
-  if (!self._ended) {
-    self.emit('end')
-    self.emit('close')
-    self._ended = true
-  }
+module.exports = {
+  mkdirs: makeDir,
+  mkdirsSync: makeDirSync,
+  // alias
+  mkdirp: makeDir,
+  mkdirpSync: makeDirSync,
+  ensureDir: makeDir,
+  ensureDirSync: makeDirSync
 }
 
 
 /***/ }),
 
-/***/ 404:
+/***/ 2751:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-module.exports = LinkWriter
+"use strict";
 
-var fs = __nccwpck_require__(7758)
-var Writer = __nccwpck_require__(8680)
-var inherits = __nccwpck_require__(4124)
-var path = __nccwpck_require__(1017)
-var rimraf = __nccwpck_require__(1367)
+const fs = __nccwpck_require__(1176)
+const { checkPath } = __nccwpck_require__(9907)
 
-inherits(LinkWriter, Writer)
-
-function LinkWriter (props) {
-  var self = this
-  if (!(self instanceof LinkWriter)) {
-    throw new Error('LinkWriter must be called as constructor.')
-  }
-
-  // should already be established as a Link type
-  if (!((props.type === 'Link' && props.Link) ||
-    (props.type === 'SymbolicLink' && props.SymbolicLink))) {
-    throw new Error('Non-link type ' + props.type)
-  }
-
-  if (props.linkpath === '') props.linkpath = '.'
-  if (!props.linkpath) {
-    self.error('Need linkpath property to create ' + props.type)
-  }
-
-  Writer.call(this, props)
+const getMode = options => {
+  const defaults = { mode: 0o777 }
+  if (typeof options === 'number') return options
+  return ({ ...defaults, ...options }).mode
 }
 
-LinkWriter.prototype._create = function () {
-  // console.error(" LW _create")
-  var self = this
-  var hard = self.type === 'Link' || process.platform === 'win32'
-  var link = hard ? 'link' : 'symlink'
-  var lp = hard ? path.resolve(self.dirname, self.linkpath) : self.linkpath
+module.exports.makeDir = async (dir, options) => {
+  checkPath(dir)
 
-  // can only change the link path by clobbering
-  // For hard links, let's just assume that's always the case, since
-  // there's no good way to read them if we don't already know.
-  if (hard) return clobber(self, lp, link)
-
-  fs.readlink(self._path, function (er, p) {
-    // only skip creation if it's exactly the same link
-    if (p && p === lp) return finish(self)
-    clobber(self, lp, link)
+  return fs.mkdir(dir, {
+    mode: getMode(options),
+    recursive: true
   })
 }
 
-function clobber (self, lp, link) {
-  rimraf(self._path, function (er) {
-    if (er) return self.error(er)
-    create(self, lp, link)
+module.exports.makeDirSync = (dir, options) => {
+  checkPath(dir)
+
+  return fs.mkdirSync(dir, {
+    mode: getMode(options),
+    recursive: true
   })
-}
-
-function create (self, lp, link) {
-  fs[link](lp, self._path, function (er) {
-    // if this is a hard link, and we're in the process of writing out a
-    // directory, it's very possible that the thing we're linking to
-    // doesn't exist yet (especially if it was intended as a symlink),
-    // so swallow ENOENT errors here and just soldier in.
-    // Additionally, an EPERM or EACCES can happen on win32 if it's trying
-    // to make a link to a directory.  Again, just skip it.
-    // A better solution would be to have fs.symlink be supported on
-    // windows in some nice fashion.
-    if (er) {
-      if ((er.code === 'ENOENT' ||
-        er.code === 'EACCES' ||
-        er.code === 'EPERM') && process.platform === 'win32') {
-        self.ready = true
-        self.emit('ready')
-        self.emit('end')
-        self.emit('close')
-        self.end = self._finish = function () {}
-      } else return self.error(er)
-    }
-    finish(self)
-  })
-}
-
-function finish (self) {
-  self.ready = true
-  self.emit('ready')
-  if (self._ended && !self._finished) self._finish()
-}
-
-LinkWriter.prototype.end = function () {
-  // console.error("LW finish in end")
-  this._ended = true
-  if (this.ready) {
-    this._finished = true
-    this._finish()
-  }
 }
 
 
 /***/ }),
 
-/***/ 7328:
+/***/ 9907:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-// A reader for when we don't yet know what kind of thing
-// the thing is.
-
-module.exports = ProxyReader
-
-var Reader = __nccwpck_require__(3284)
-var getType = __nccwpck_require__(1600)
-var inherits = __nccwpck_require__(4124)
-var fs = __nccwpck_require__(7758)
-
-inherits(ProxyReader, Reader)
-
-function ProxyReader (props) {
-  var self = this
-  if (!(self instanceof ProxyReader)) {
-    throw new Error('ProxyReader must be called as constructor.')
-  }
-
-  self.props = props
-  self._buffer = []
-  self.ready = false
-
-  Reader.call(self, props)
-}
-
-ProxyReader.prototype._stat = function () {
-  var self = this
-  var props = self.props
-  // stat the thing to see what the proxy should be.
-  var stat = props.follow ? 'stat' : 'lstat'
-
-  fs[stat](props.path, function (er, current) {
-    var type
-    if (er || !current) {
-      type = 'File'
-    } else {
-      type = getType(current)
-    }
-
-    props[type] = true
-    props.type = self.type = type
-
-    self._old = current
-    self._addProxy(Reader(props, current))
-  })
-}
-
-ProxyReader.prototype._addProxy = function (proxy) {
-  var self = this
-  if (self._proxyTarget) {
-    return self.error('proxy already set')
-  }
-
-  self._proxyTarget = proxy
-  proxy._proxy = self
-
-  ;[
-    'error',
-    'data',
-    'end',
-    'close',
-    'linkpath',
-    'entry',
-    'entryEnd',
-    'child',
-    'childEnd',
-    'warn',
-    'stat'
-  ].forEach(function (ev) {
-    // console.error('~~ proxy event', ev, self.path)
-    proxy.on(ev, self.emit.bind(self, ev))
-  })
-
-  self.emit('proxy', proxy)
-
-  proxy.on('ready', function () {
-    // console.error("~~ proxy is ready!", self.path)
-    self.ready = true
-    self.emit('ready')
-  })
-
-  var calls = self._buffer
-  self._buffer.length = 0
-  calls.forEach(function (c) {
-    proxy[c[0]].apply(proxy, c[1])
-  })
-}
-
-ProxyReader.prototype.pause = function () {
-  return this._proxyTarget ? this._proxyTarget.pause() : false
-}
-
-ProxyReader.prototype.resume = function () {
-  return this._proxyTarget ? this._proxyTarget.resume() : false
-}
-
-
-/***/ }),
-
-/***/ 2071:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-// A writer for when we don't know what kind of thing
-// the thing is.  That is, it's not explicitly set,
-// so we're going to make it whatever the thing already
-// is, or "File"
-//
-// Until then, collect all events.
-
-module.exports = ProxyWriter
-
-var Writer = __nccwpck_require__(8680)
-var getType = __nccwpck_require__(1600)
-var inherits = __nccwpck_require__(4124)
-var collect = __nccwpck_require__(3317)
-var fs = __nccwpck_require__(7147)
-
-inherits(ProxyWriter, Writer)
-
-function ProxyWriter (props) {
-  var self = this
-  if (!(self instanceof ProxyWriter)) {
-    throw new Error('ProxyWriter must be called as constructor.')
-  }
-
-  self.props = props
-  self._needDrain = false
-
-  Writer.call(self, props)
-}
-
-ProxyWriter.prototype._stat = function () {
-  var self = this
-  var props = self.props
-  // stat the thing to see what the proxy should be.
-  var stat = props.follow ? 'stat' : 'lstat'
-
-  fs[stat](props.path, function (er, current) {
-    var type
-    if (er || !current) {
-      type = 'File'
-    } else {
-      type = getType(current)
-    }
-
-    props[type] = true
-    props.type = self.type = type
-
-    self._old = current
-    self._addProxy(Writer(props, current))
-  })
-}
-
-ProxyWriter.prototype._addProxy = function (proxy) {
-  // console.error("~~ set proxy", this.path)
-  var self = this
-  if (self._proxy) {
-    return self.error('proxy already set')
-  }
-
-  self._proxy = proxy
-  ;[
-    'ready',
-    'error',
-    'close',
-    'pipe',
-    'drain',
-    'warn'
-  ].forEach(function (ev) {
-    proxy.on(ev, self.emit.bind(self, ev))
-  })
-
-  self.emit('proxy', proxy)
-
-  var calls = self._buffer
-  calls.forEach(function (c) {
-    // console.error("~~ ~~ proxy buffered call", c[0], c[1])
-    proxy[c[0]].apply(proxy, c[1])
-  })
-  self._buffer.length = 0
-  if (self._needsDrain) self.emit('drain')
-}
-
-ProxyWriter.prototype.add = function (entry) {
-  // console.error("~~ proxy add")
-  collect(entry)
-
-  if (!this._proxy) {
-    this._buffer.push(['add', [entry]])
-    this._needDrain = true
-    return false
-  }
-  return this._proxy.add(entry)
-}
-
-ProxyWriter.prototype.write = function (c) {
-  // console.error('~~ proxy write')
-  if (!this._proxy) {
-    this._buffer.push(['write', [c]])
-    this._needDrain = true
-    return false
-  }
-  return this._proxy.write(c)
-}
-
-ProxyWriter.prototype.end = function (c) {
-  // console.error('~~ proxy end')
-  if (!this._proxy) {
-    this._buffer.push(['end', [c]])
-    return false
-  }
-  return this._proxy.end(c)
-}
-
-
-/***/ }),
-
-/***/ 3284:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-module.exports = Reader
-
-var fs = __nccwpck_require__(7758)
-var Stream = (__nccwpck_require__(2781).Stream)
-var inherits = __nccwpck_require__(4124)
-var path = __nccwpck_require__(1017)
-var getType = __nccwpck_require__(1600)
-var hardLinks = Reader.hardLinks = {}
-var Abstract = __nccwpck_require__(9479)
-
-// Must do this *before* loading the child classes
-inherits(Reader, Abstract)
-
-var LinkReader = __nccwpck_require__(8337)
-
-function Reader (props, currentStat) {
-  var self = this
-  if (!(self instanceof Reader)) return new Reader(props, currentStat)
-
-  if (typeof props === 'string') {
-    props = { path: props }
-  }
-
-  // polymorphism.
-  // call fstream.Reader(dir) to get a DirReader object, etc.
-  // Note that, unlike in the Writer case, ProxyReader is going
-  // to be the *normal* state of affairs, since we rarely know
-  // the type of a file prior to reading it.
-
-  var type
-  var ClassType
-
-  if (props.type && typeof props.type === 'function') {
-    type = props.type
-    ClassType = type
-  } else {
-    type = getType(props)
-    ClassType = Reader
-  }
-
-  if (currentStat && !type) {
-    type = getType(currentStat)
-    props[type] = true
-    props.type = type
-  }
-
-  switch (type) {
-    case 'Directory':
-      ClassType = __nccwpck_require__(4486)
-      break
-
-    case 'Link':
-    // XXX hard links are just files.
-    // However, it would be good to keep track of files' dev+inode
-    // and nlink values, and create a HardLinkReader that emits
-    // a linkpath value of the original copy, so that the tar
-    // writer can preserve them.
-    // ClassType = HardLinkReader
-    // break
-
-    case 'File':
-      ClassType = __nccwpck_require__(8413)
-      break
-
-    case 'SymbolicLink':
-      ClassType = LinkReader
-      break
-
-    case 'Socket':
-      ClassType = __nccwpck_require__(2470)
-      break
-
-    case null:
-      ClassType = __nccwpck_require__(7328)
-      break
-  }
-
-  if (!(self instanceof ClassType)) {
-    return new ClassType(props)
-  }
-
-  Abstract.call(self)
-
-  if (!props.path) {
-    self.error('Must provide a path', null, true)
-  }
-
-  self.readable = true
-  self.writable = false
-
-  self.type = type
-  self.props = props
-  self.depth = props.depth = props.depth || 0
-  self.parent = props.parent || null
-  self.root = props.root || (props.parent && props.parent.root) || self
-
-  self._path = self.path = path.resolve(props.path)
+"use strict";
+// Adapted from https://github.com/sindresorhus/make-dir
+// Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+// The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+const path = __nccwpck_require__(1017)
+
+// https://github.com/nodejs/node/issues/8987
+// https://github.com/libuv/libuv/pull/1088
+module.exports.checkPath = function checkPath (pth) {
   if (process.platform === 'win32') {
-    self.path = self._path = self.path.replace(/\?/g, '_')
-    if (self._path.length >= 260) {
-      // how DOES one create files on the moon?
-      // if the path has spaces in it, then UNC will fail.
-      self._swallowErrors = true
-      // if (self._path.indexOf(" ") === -1) {
-      self._path = '\\\\?\\' + self.path.replace(/\//g, '\\')
-    // }
+    const pathHasInvalidWinCharacters = /[<>:"|?*]/.test(pth.replace(path.parse(pth).root, ''))
+
+    if (pathHasInvalidWinCharacters) {
+      const error = new Error(`Path contains invalid characters: ${pth}`)
+      error.code = 'EINVAL'
+      throw error
     }
-  }
-  self.basename = props.basename = path.basename(self.path)
-  self.dirname = props.dirname = path.dirname(self.path)
-
-  // these have served their purpose, and are now just noisy clutter
-  props.parent = props.root = null
-
-  // console.error("\n\n\n%s setting size to", props.path, props.size)
-  self.size = props.size
-  self.filter = typeof props.filter === 'function' ? props.filter : null
-  if (props.sort === 'alpha') props.sort = alphasort
-
-  // start the ball rolling.
-  // this will stat the thing, and then call self._read()
-  // to start reading whatever it is.
-  // console.error("calling stat", props.path, currentStat)
-  self._stat(currentStat)
-}
-
-function alphasort (a, b) {
-  return a === b ? 0
-    : a.toLowerCase() > b.toLowerCase() ? 1
-      : a.toLowerCase() < b.toLowerCase() ? -1
-        : a > b ? 1
-          : -1
-}
-
-Reader.prototype._stat = function (currentStat) {
-  var self = this
-  var props = self.props
-  var stat = props.follow ? 'stat' : 'lstat'
-  // console.error("Reader._stat", self._path, currentStat)
-  if (currentStat) process.nextTick(statCb.bind(null, null, currentStat))
-  else fs[stat](self._path, statCb)
-
-  function statCb (er, props_) {
-    // console.error("Reader._stat, statCb", self._path, props_, props_.nlink)
-    if (er) return self.error(er)
-
-    Object.keys(props_).forEach(function (k) {
-      props[k] = props_[k]
-    })
-
-    // if it's not the expected size, then abort here.
-    if (undefined !== self.size && props.size !== self.size) {
-      return self.error('incorrect size')
-    }
-    self.size = props.size
-
-    var type = getType(props)
-    var handleHardlinks = props.hardlinks !== false
-
-    // special little thing for handling hardlinks.
-    if (handleHardlinks && type !== 'Directory' && props.nlink && props.nlink > 1) {
-      var k = props.dev + ':' + props.ino
-      // console.error("Reader has nlink", self._path, k)
-      if (hardLinks[k] === self._path || !hardLinks[k]) {
-        hardLinks[k] = self._path
-      } else {
-        // switch into hardlink mode.
-        type = self.type = self.props.type = 'Link'
-        self.Link = self.props.Link = true
-        self.linkpath = self.props.linkpath = hardLinks[k]
-        // console.error("Hardlink detected, switching mode", self._path, self.linkpath)
-        // Setting __proto__ would arguably be the "correct"
-        // approach here, but that just seems too wrong.
-        self._stat = self._read = LinkReader.prototype._read
-      }
-    }
-
-    if (self.type && self.type !== type) {
-      self.error('Unexpected type: ' + type)
-    }
-
-    // if the filter doesn't pass, then just skip over this one.
-    // still have to emit end so that dir-walking can move on.
-    if (self.filter) {
-      var who = self._proxy || self
-      // special handling for ProxyReaders
-      if (!self.filter.call(who, who, props)) {
-        if (!self._disowned) {
-          self.abort()
-          self.emit('end')
-          self.emit('close')
-        }
-        return
-      }
-    }
-
-    // last chance to abort or disown before the flow starts!
-    var events = ['_stat', 'stat', 'ready']
-    var e = 0
-    ;(function go () {
-      if (self._aborted) {
-        self.emit('end')
-        self.emit('close')
-        return
-      }
-
-      if (self._paused && self.type !== 'Directory') {
-        self.once('resume', go)
-        return
-      }
-
-      var ev = events[e++]
-      if (!ev) {
-        return self._read()
-      }
-      self.emit(ev, props)
-      go()
-    })()
-  }
-}
-
-Reader.prototype.pipe = function (dest) {
-  var self = this
-  if (typeof dest.add === 'function') {
-    // piping to a multi-compatible, and we've got directory entries.
-    self.on('entry', function (entry) {
-      var ret = dest.add(entry)
-      if (ret === false) {
-        self.pause()
-      }
-    })
-  }
-
-  // console.error("R Pipe apply Stream Pipe")
-  return Stream.prototype.pipe.apply(this, arguments)
-}
-
-Reader.prototype.pause = function (who) {
-  this._paused = true
-  who = who || this
-  this.emit('pause', who)
-  if (this._stream) this._stream.pause(who)
-}
-
-Reader.prototype.resume = function (who) {
-  this._paused = false
-  who = who || this
-  this.emit('resume', who)
-  if (this._stream) this._stream.resume(who)
-  this._read()
-}
-
-Reader.prototype._read = function () {
-  this.error('Cannot read unknown type: ' + this.type)
-}
-
-
-/***/ }),
-
-/***/ 2470:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-// Just get the stats, and then don't do anything.
-// You can't really "read" from a socket.  You "connect" to it.
-// Mostly, this is here so that reading a dir with a socket in it
-// doesn't blow up.
-
-module.exports = SocketReader
-
-var inherits = __nccwpck_require__(4124)
-var Reader = __nccwpck_require__(3284)
-
-inherits(SocketReader, Reader)
-
-function SocketReader (props) {
-  var self = this
-  if (!(self instanceof SocketReader)) {
-    throw new Error('SocketReader must be called as constructor.')
-  }
-
-  if (!(props.type === 'Socket' && props.Socket)) {
-    throw new Error('Non-socket type ' + props.type)
-  }
-
-  Reader.call(self, props)
-}
-
-SocketReader.prototype._read = function () {
-  var self = this
-  if (self._paused) return
-  // basically just a no-op, since we got all the info we have
-  // from the _stat method
-  if (!self._ended) {
-    self.emit('end')
-    self.emit('close')
-    self._ended = true
   }
 }
 
 
 /***/ }),
 
-/***/ 8680:
+/***/ 1497:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-module.exports = Writer
+"use strict";
 
-var fs = __nccwpck_require__(7758)
-var inherits = __nccwpck_require__(4124)
-var rimraf = __nccwpck_require__(1367)
-var mkdir = __nccwpck_require__(7812)
-var path = __nccwpck_require__(1017)
-var umask = process.platform === 'win32' ? 0 : process.umask()
-var getType = __nccwpck_require__(1600)
-var Abstract = __nccwpck_require__(9479)
 
-// Must do this *before* loading the child classes
-inherits(Writer, Abstract)
-
-Writer.dirmode = parseInt('0777', 8) & (~umask)
-Writer.filemode = parseInt('0666', 8) & (~umask)
-
-var DirWriter = __nccwpck_require__(4745)
-var LinkWriter = __nccwpck_require__(404)
-var FileWriter = __nccwpck_require__(2539)
-var ProxyWriter = __nccwpck_require__(2071)
-
-// props is the desired state.  current is optionally the current stat,
-// provided here so that subclasses can avoid statting the target
-// more than necessary.
-function Writer (props, current) {
-  var self = this
-
-  if (typeof props === 'string') {
-    props = { path: props }
-  }
-
-  // polymorphism.
-  // call fstream.Writer(dir) to get a DirWriter object, etc.
-  var type = getType(props)
-  var ClassType = Writer
-
-  switch (type) {
-    case 'Directory':
-      ClassType = DirWriter
-      break
-    case 'File':
-      ClassType = FileWriter
-      break
-    case 'Link':
-    case 'SymbolicLink':
-      ClassType = LinkWriter
-      break
-    case null:
-    default:
-      // Don't know yet what type to create, so we wrap in a proxy.
-      ClassType = ProxyWriter
-      break
-  }
-
-  if (!(self instanceof ClassType)) return new ClassType(props)
-
-  // now get down to business.
-
-  Abstract.call(self)
-
-  if (!props.path) self.error('Must provide a path', null, true)
-
-  // props is what we want to set.
-  // set some convenience properties as well.
-  self.type = props.type
-  self.props = props
-  self.depth = props.depth || 0
-  self.clobber = props.clobber === false ? props.clobber : true
-  self.parent = props.parent || null
-  self.root = props.root || (props.parent && props.parent.root) || self
-
-  self._path = self.path = path.resolve(props.path)
-  if (process.platform === 'win32') {
-    self.path = self._path = self.path.replace(/\?/g, '_')
-    if (self._path.length >= 260) {
-      self._swallowErrors = true
-      self._path = '\\\\?\\' + self.path.replace(/\//g, '\\')
-    }
-  }
-  self.basename = path.basename(props.path)
-  self.dirname = path.dirname(props.path)
-  self.linkpath = props.linkpath || null
-
-  props.parent = props.root = null
-
-  // console.error("\n\n\n%s setting size to", props.path, props.size)
-  self.size = props.size
-
-  if (typeof props.mode === 'string') {
-    props.mode = parseInt(props.mode, 8)
-  }
-
-  self.readable = false
-  self.writable = true
-
-  // buffer until ready, or while handling another entry
-  self._buffer = []
-  self.ready = false
-
-  self.filter = typeof props.filter === 'function' ? props.filter : null
-
-  // start the ball rolling.
-  // this checks what's there already, and then calls
-  // self._create() to call the impl-specific creation stuff.
-  self._stat(current)
-}
-
-// Calling this means that it's something we can't create.
-// Just assert that it's already there, otherwise raise a warning.
-Writer.prototype._create = function () {
-  var self = this
-  fs[self.props.follow ? 'stat' : 'lstat'](self._path, function (er) {
-    if (er) {
-      return self.warn('Cannot create ' + self._path + '\n' +
-        'Unsupported type: ' + self.type, 'ENOTSUP')
-    }
-    self._finish()
-  })
-}
-
-Writer.prototype._stat = function (current) {
-  var self = this
-  var props = self.props
-  var stat = props.follow ? 'stat' : 'lstat'
-  var who = self._proxy || self
-
-  if (current) statCb(null, current)
-  else fs[stat](self._path, statCb)
-
-  function statCb (er, current) {
-    if (self.filter && !self.filter.call(who, who, current)) {
-      self._aborted = true
-      self.emit('end')
-      self.emit('close')
-      return
-    }
-
-    // if it's not there, great.  We'll just create it.
-    // if it is there, then we'll need to change whatever differs
-    if (er || !current) {
-      return create(self)
-    }
-
-    self._old = current
-    var currentType = getType(current)
-
-    // if it's a type change, then we need to clobber or error.
-    // if it's not a type change, then let the impl take care of it.
-    if (currentType !== self.type || self.type === 'File' && current.nlink > 1) {
-      return rimraf(self._path, function (er) {
-        if (er) return self.error(er)
-        self._old = null
-        create(self)
-      })
-    }
-
-    // otherwise, just handle in the app-specific way
-    // this creates a fs.WriteStream, or mkdir's, or whatever
-    create(self)
-  }
-}
-
-function create (self) {
-  // console.error("W create", self._path, Writer.dirmode)
-
-  // XXX Need to clobber non-dirs that are in the way,
-  // unless { clobber: false } in the props.
-  mkdir(path.dirname(self._path), Writer.dirmode, function (er, made) {
-    // console.error("W created", path.dirname(self._path), er)
-    if (er) return self.error(er)
-
-    // later on, we have to set the mode and owner for these
-    self._madeDir = made
-    return self._create()
-  })
-}
-
-function endChmod (self, want, current, path, cb) {
-  var wantMode = want.mode
-  var chmod = want.follow || self.type !== 'SymbolicLink'
-    ? 'chmod' : 'lchmod'
-
-  if (!fs[chmod]) return cb()
-  if (typeof wantMode !== 'number') return cb()
-
-  var curMode = current.mode & parseInt('0777', 8)
-  wantMode = wantMode & parseInt('0777', 8)
-  if (wantMode === curMode) return cb()
-
-  fs[chmod](path, wantMode, cb)
-}
-
-function endChown (self, want, current, path, cb) {
-  // Don't even try it unless root.  Too easy to EPERM.
-  if (process.platform === 'win32') return cb()
-  if (!process.getuid || process.getuid() !== 0) return cb()
-  if (typeof want.uid !== 'number' &&
-    typeof want.gid !== 'number') return cb()
-
-  if (current.uid === want.uid &&
-    current.gid === want.gid) return cb()
-
-  var chown = (self.props.follow || self.type !== 'SymbolicLink')
-    ? 'chown' : 'lchown'
-  if (!fs[chown]) return cb()
-
-  if (typeof want.uid !== 'number') want.uid = current.uid
-  if (typeof want.gid !== 'number') want.gid = current.gid
-
-  fs[chown](path, want.uid, want.gid, cb)
-}
-
-function endUtimes (self, want, current, path, cb) {
-  if (!fs.utimes || process.platform === 'win32') return cb()
-
-  var utimes = (want.follow || self.type !== 'SymbolicLink')
-    ? 'utimes' : 'lutimes'
-
-  if (utimes === 'lutimes' && !fs[utimes]) {
-    utimes = 'utimes'
-  }
-
-  if (!fs[utimes]) return cb()
-
-  var curA = current.atime
-  var curM = current.mtime
-  var meA = want.atime
-  var meM = want.mtime
-
-  if (meA === undefined) meA = curA
-  if (meM === undefined) meM = curM
-
-  if (!isDate(meA)) meA = new Date(meA)
-  if (!isDate(meM)) meA = new Date(meM)
-
-  if (meA.getTime() === curA.getTime() &&
-    meM.getTime() === curM.getTime()) return cb()
-
-  fs[utimes](path, meA, meM, cb)
-}
-
-// XXX This function is beastly.  Break it up!
-Writer.prototype._finish = function () {
-  var self = this
-
-  if (self._finishing) return
-  self._finishing = true
-
-  // console.error(" W Finish", self._path, self.size)
-
-  // set up all the things.
-  // At this point, we're already done writing whatever we've gotta write,
-  // adding files to the dir, etc.
-  var todo = 0
-  var errState = null
-  var done = false
-
-  if (self._old) {
-    // the times will almost *certainly* have changed.
-    // adds the utimes syscall, but remove another stat.
-    self._old.atime = new Date(0)
-    self._old.mtime = new Date(0)
-    // console.error(" W Finish Stale Stat", self._path, self.size)
-    setProps(self._old)
-  } else {
-    var stat = self.props.follow ? 'stat' : 'lstat'
-    // console.error(" W Finish Stating", self._path, self.size)
-    fs[stat](self._path, function (er, current) {
-      // console.error(" W Finish Stated", self._path, self.size, current)
-      if (er) {
-        // if we're in the process of writing out a
-        // directory, it's very possible that the thing we're linking to
-        // doesn't exist yet (especially if it was intended as a symlink),
-        // so swallow ENOENT errors here and just soldier on.
-        if (er.code === 'ENOENT' &&
-          (self.type === 'Link' || self.type === 'SymbolicLink') &&
-          process.platform === 'win32') {
-          self.ready = true
-          self.emit('ready')
-          self.emit('end')
-          self.emit('close')
-          self.end = self._finish = function () {}
-          return
-        } else return self.error(er)
-      }
-      setProps(self._old = current)
-    })
-  }
-
-  return
-
-  function setProps (current) {
-    todo += 3
-    endChmod(self, self.props, current, self._path, next('chmod'))
-    endChown(self, self.props, current, self._path, next('chown'))
-    endUtimes(self, self.props, current, self._path, next('utimes'))
-  }
-
-  function next (what) {
-    return function (er) {
-      // console.error("   W Finish", what, todo)
-      if (errState) return
-      if (er) {
-        er.fstream_finish_call = what
-        return self.error(errState = er)
-      }
-      if (--todo > 0) return
-      if (done) return
-      done = true
-
-      // we may still need to set the mode/etc. on some parent dirs
-      // that were created previously.  delay end/close until then.
-      if (!self._madeDir) return end()
-      else endMadeDir(self, self._path, end)
-
-      function end (er) {
-        if (er) {
-          er.fstream_finish_call = 'setupMadeDir'
-          return self.error(er)
-        }
-        // all the props have been set, so we're completely done.
-        self.emit('end')
-        self.emit('close')
-      }
-    }
-  }
-}
-
-function endMadeDir (self, p, cb) {
-  var made = self._madeDir
-  // everything *between* made and path.dirname(self._path)
-  // needs to be set up.  Note that this may just be one dir.
-  var d = path.dirname(p)
-
-  endMadeDir_(self, d, function (er) {
-    if (er) return cb(er)
-    if (d === made) {
-      return cb()
-    }
-    endMadeDir(self, d, cb)
-  })
-}
-
-function endMadeDir_ (self, p, cb) {
-  var dirProps = {}
-  Object.keys(self.props).forEach(function (k) {
-    dirProps[k] = self.props[k]
-
-    // only make non-readable dirs if explicitly requested.
-    if (k === 'mode' && self.type !== 'Directory') {
-      dirProps[k] = dirProps[k] | parseInt('0111', 8)
-    }
-  })
-
-  var todo = 3
-  var errState = null
-  fs.stat(p, function (er, current) {
-    if (er) return cb(errState = er)
-    endChmod(self, dirProps, current, p, next)
-    endChown(self, dirProps, current, p, next)
-    endUtimes(self, dirProps, current, p, next)
-  })
-
-  function next (er) {
-    if (errState) return
-    if (er) return cb(errState = er)
-    if (--todo === 0) return cb()
-  }
-}
-
-Writer.prototype.pipe = function () {
-  this.error("Can't pipe from writable stream")
-}
-
-Writer.prototype.add = function () {
-  this.error("Can't add to non-Directory type")
-}
-
-Writer.prototype.write = function () {
-  return true
-}
-
-function objectToString (d) {
-  return Object.prototype.toString.call(d)
-}
-
-function isDate (d) {
-  return typeof d === 'object' && objectToString(d) === '[object Date]'
+const u = (__nccwpck_require__(9046).fromPromise)
+module.exports = {
+  move: u(__nccwpck_require__(2231)),
+  moveSync: __nccwpck_require__(2047)
 }
 
 
 /***/ }),
 
-/***/ 7812:
+/***/ 2047:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var path = __nccwpck_require__(1017);
-var fs = __nccwpck_require__(7147);
-var _0777 = parseInt('0777', 8);
+"use strict";
 
-module.exports = mkdirP.mkdirp = mkdirP.mkdirP = mkdirP;
 
-function mkdirP (p, opts, f, made) {
-    if (typeof opts === 'function') {
-        f = opts;
-        opts = {};
-    }
-    else if (!opts || typeof opts !== 'object') {
-        opts = { mode: opts };
-    }
-    
-    var mode = opts.mode;
-    var xfs = opts.fs || fs;
-    
-    if (mode === undefined) {
-        mode = _0777
-    }
-    if (!made) made = null;
-    
-    var cb = f || function () {};
-    p = path.resolve(p);
-    
-    xfs.mkdir(p, mode, function (er) {
-        if (!er) {
-            made = made || p;
-            return cb(null, made);
-        }
-        switch (er.code) {
-            case 'ENOENT':
-                if (path.dirname(p) === p) return cb(er);
-                mkdirP(path.dirname(p), opts, function (er, made) {
-                    if (er) cb(er, made);
-                    else mkdirP(p, opts, cb, made);
-                });
-                break;
+const fs = __nccwpck_require__(7758)
+const path = __nccwpck_require__(1017)
+const copySync = (__nccwpck_require__(1335).copySync)
+const removeSync = (__nccwpck_require__(7357).removeSync)
+const mkdirpSync = (__nccwpck_require__(8605).mkdirpSync)
+const stat = __nccwpck_require__(3901)
 
-            // In the case of any other error, just see if there's a dir
-            // there already.  If so, then hooray!  If not, then something
-            // is borked.
-            default:
-                xfs.stat(p, function (er2, stat) {
-                    // if the stat fails, then that's super weird.
-                    // let the original error be the failure reason.
-                    if (er2 || !stat.isDirectory()) cb(er, made)
-                    else cb(null, made);
-                });
-                break;
-        }
-    });
+function moveSync (src, dest, opts) {
+  opts = opts || {}
+  const overwrite = opts.overwrite || opts.clobber || false
+
+  const { srcStat, isChangingCase = false } = stat.checkPathsSync(src, dest, 'move', opts)
+  stat.checkParentPathsSync(src, srcStat, dest, 'move')
+  if (!isParentRoot(dest)) mkdirpSync(path.dirname(dest))
+  return doRename(src, dest, overwrite, isChangingCase)
 }
 
-mkdirP.sync = function sync (p, opts, made) {
-    if (!opts || typeof opts !== 'object') {
-        opts = { mode: opts };
-    }
-    
-    var mode = opts.mode;
-    var xfs = opts.fs || fs;
-    
-    if (mode === undefined) {
-        mode = _0777
-    }
-    if (!made) made = null;
-
-    p = path.resolve(p);
-
-    try {
-        xfs.mkdirSync(p, mode);
-        made = made || p;
-    }
-    catch (err0) {
-        switch (err0.code) {
-            case 'ENOENT' :
-                made = sync(path.dirname(p), opts, made);
-                sync(p, opts, made);
-                break;
-
-            // In the case of any other error, just see if there's a dir
-            // there already.  If so, then hooray!  If not, then something
-            // is borked.
-            default:
-                var stat;
-                try {
-                    stat = xfs.statSync(p);
-                }
-                catch (err1) {
-                    throw err0;
-                }
-                if (!stat.isDirectory()) throw err0;
-                break;
-        }
-    }
-
-    return made;
-};
-
-
-/***/ }),
-
-/***/ 1367:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-module.exports = rimraf
-rimraf.sync = rimrafSync
-
-var assert = __nccwpck_require__(9491)
-var path = __nccwpck_require__(1017)
-var fs = __nccwpck_require__(7147)
-var glob = undefined
-try {
-  glob = __nccwpck_require__(1957)
-} catch (_err) {
-  // treat glob as optional.
-}
-var _0666 = parseInt('666', 8)
-
-var defaultGlobOpts = {
-  nosort: true,
-  silent: true
+function isParentRoot (dest) {
+  const parent = path.dirname(dest)
+  const parsedPath = path.parse(parent)
+  return parsedPath.root === parent
 }
 
-// for EMFILE handling
-var timeout = 0
-
-var isWindows = (process.platform === "win32")
-
-function defaults (options) {
-  var methods = [
-    'unlink',
-    'chmod',
-    'stat',
-    'lstat',
-    'rmdir',
-    'readdir'
-  ]
-  methods.forEach(function(m) {
-    options[m] = options[m] || fs[m]
-    m = m + 'Sync'
-    options[m] = options[m] || fs[m]
-  })
-
-  options.maxBusyTries = options.maxBusyTries || 3
-  options.emfileWait = options.emfileWait || 1000
-  if (options.glob === false) {
-    options.disableGlob = true
+function doRename (src, dest, overwrite, isChangingCase) {
+  if (isChangingCase) return rename(src, dest, overwrite)
+  if (overwrite) {
+    removeSync(dest)
+    return rename(src, dest, overwrite)
   }
-  if (options.disableGlob !== true && glob === undefined) {
-    throw Error('glob dependency not found, set `options.disableGlob = true` if intentional')
-  }
-  options.disableGlob = options.disableGlob || false
-  options.glob = options.glob || defaultGlobOpts
+  if (fs.existsSync(dest)) throw new Error('dest already exists.')
+  return rename(src, dest, overwrite)
 }
 
-function rimraf (p, options, cb) {
-  if (typeof options === 'function') {
-    cb = options
-    options = {}
-  }
-
-  assert(p, 'rimraf: missing path')
-  assert.equal(typeof p, 'string', 'rimraf: path should be a string')
-  assert.equal(typeof cb, 'function', 'rimraf: callback function required')
-  assert(options, 'rimraf: invalid options argument provided')
-  assert.equal(typeof options, 'object', 'rimraf: options should be object')
-
-  defaults(options)
-
-  var busyTries = 0
-  var errState = null
-  var n = 0
-
-  if (options.disableGlob || !glob.hasMagic(p))
-    return afterGlob(null, [p])
-
-  options.lstat(p, function (er, stat) {
-    if (!er)
-      return afterGlob(null, [p])
-
-    glob(p, options.glob, afterGlob)
-  })
-
-  function next (er) {
-    errState = errState || er
-    if (--n === 0)
-      cb(errState)
-  }
-
-  function afterGlob (er, results) {
-    if (er)
-      return cb(er)
-
-    n = results.length
-    if (n === 0)
-      return cb()
-
-    results.forEach(function (p) {
-      rimraf_(p, options, function CB (er) {
-        if (er) {
-          if ((er.code === "EBUSY" || er.code === "ENOTEMPTY" || er.code === "EPERM") &&
-              busyTries < options.maxBusyTries) {
-            busyTries ++
-            var time = busyTries * 100
-            // try again, with the same exact callback as this one.
-            return setTimeout(function () {
-              rimraf_(p, options, CB)
-            }, time)
-          }
-
-          // this one won't happen if graceful-fs is used.
-          if (er.code === "EMFILE" && timeout < options.emfileWait) {
-            return setTimeout(function () {
-              rimraf_(p, options, CB)
-            }, timeout ++)
-          }
-
-          // already gone
-          if (er.code === "ENOENT") er = null
-        }
-
-        timeout = 0
-        next(er)
-      })
-    })
-  }
-}
-
-// Two possible strategies.
-// 1. Assume it's a file.  unlink it, then do the dir stuff on EPERM or EISDIR
-// 2. Assume it's a directory.  readdir, then do the file stuff on ENOTDIR
-//
-// Both result in an extra syscall when you guess wrong.  However, there
-// are likely far more normal files in the world than directories.  This
-// is based on the assumption that a the average number of files per
-// directory is >= 1.
-//
-// If anyone ever complains about this, then I guess the strategy could
-// be made configurable somehow.  But until then, YAGNI.
-function rimraf_ (p, options, cb) {
-  assert(p)
-  assert(options)
-  assert(typeof cb === 'function')
-
-  // sunos lets the root user unlink directories, which is... weird.
-  // so we have to lstat here and make sure it's not a dir.
-  options.lstat(p, function (er, st) {
-    if (er && er.code === "ENOENT")
-      return cb(null)
-
-    // Windows can EPERM on stat.  Life is suffering.
-    if (er && er.code === "EPERM" && isWindows)
-      fixWinEPERM(p, options, er, cb)
-
-    if (st && st.isDirectory())
-      return rmdir(p, options, er, cb)
-
-    options.unlink(p, function (er) {
-      if (er) {
-        if (er.code === "ENOENT")
-          return cb(null)
-        if (er.code === "EPERM")
-          return (isWindows)
-            ? fixWinEPERM(p, options, er, cb)
-            : rmdir(p, options, er, cb)
-        if (er.code === "EISDIR")
-          return rmdir(p, options, er, cb)
-      }
-      return cb(er)
-    })
-  })
-}
-
-function fixWinEPERM (p, options, er, cb) {
-  assert(p)
-  assert(options)
-  assert(typeof cb === 'function')
-  if (er)
-    assert(er instanceof Error)
-
-  options.chmod(p, _0666, function (er2) {
-    if (er2)
-      cb(er2.code === "ENOENT" ? null : er)
-    else
-      options.stat(p, function(er3, stats) {
-        if (er3)
-          cb(er3.code === "ENOENT" ? null : er)
-        else if (stats.isDirectory())
-          rmdir(p, options, er, cb)
-        else
-          options.unlink(p, cb)
-      })
-  })
-}
-
-function fixWinEPERMSync (p, options, er) {
-  assert(p)
-  assert(options)
-  if (er)
-    assert(er instanceof Error)
-
+function rename (src, dest, overwrite) {
   try {
-    options.chmodSync(p, _0666)
-  } catch (er2) {
-    if (er2.code === "ENOENT")
-      return
-    else
-      throw er
+    fs.renameSync(src, dest)
+  } catch (err) {
+    if (err.code !== 'EXDEV') throw err
+    return moveAcrossDevice(src, dest, overwrite)
+  }
+}
+
+function moveAcrossDevice (src, dest, overwrite) {
+  const opts = {
+    overwrite,
+    errorOnExist: true,
+    preserveTimestamps: true
+  }
+  copySync(src, dest, opts)
+  return removeSync(src)
+}
+
+module.exports = moveSync
+
+
+/***/ }),
+
+/***/ 2231:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const fs = __nccwpck_require__(1176)
+const path = __nccwpck_require__(1017)
+const { copy } = __nccwpck_require__(1335)
+const { remove } = __nccwpck_require__(7357)
+const { mkdirp } = __nccwpck_require__(8605)
+const { pathExists } = __nccwpck_require__(3835)
+const stat = __nccwpck_require__(3901)
+
+async function move (src, dest, opts = {}) {
+  const overwrite = opts.overwrite || opts.clobber || false
+
+  const { srcStat, isChangingCase = false } = await stat.checkPaths(src, dest, 'move', opts)
+
+  await stat.checkParentPaths(src, srcStat, dest, 'move')
+
+  // If the parent of dest is not root, make sure it exists before proceeding
+  const destParent = path.dirname(dest)
+  const parsedParentPath = path.parse(destParent)
+  if (parsedParentPath.root !== destParent) {
+    await mkdirp(destParent)
+  }
+
+  return doRename(src, dest, overwrite, isChangingCase)
+}
+
+async function doRename (src, dest, overwrite, isChangingCase) {
+  if (!isChangingCase) {
+    if (overwrite) {
+      await remove(dest)
+    } else if (await pathExists(dest)) {
+      throw new Error('dest already exists.')
+    }
   }
 
   try {
-    var stats = options.statSync(p)
-  } catch (er3) {
-    if (er3.code === "ENOENT")
-      return
-    else
-      throw er
-  }
-
-  if (stats.isDirectory())
-    rmdirSync(p, options, er)
-  else
-    options.unlinkSync(p)
-}
-
-function rmdir (p, options, originalEr, cb) {
-  assert(p)
-  assert(options)
-  if (originalEr)
-    assert(originalEr instanceof Error)
-  assert(typeof cb === 'function')
-
-  // try to rmdir first, and only readdir on ENOTEMPTY or EEXIST (SunOS)
-  // if we guessed wrong, and it's not a directory, then
-  // raise the original error.
-  options.rmdir(p, function (er) {
-    if (er && (er.code === "ENOTEMPTY" || er.code === "EEXIST" || er.code === "EPERM"))
-      rmkids(p, options, cb)
-    else if (er && er.code === "ENOTDIR")
-      cb(originalEr)
-    else
-      cb(er)
-  })
-}
-
-function rmkids(p, options, cb) {
-  assert(p)
-  assert(options)
-  assert(typeof cb === 'function')
-
-  options.readdir(p, function (er, files) {
-    if (er)
-      return cb(er)
-    var n = files.length
-    if (n === 0)
-      return options.rmdir(p, cb)
-    var errState
-    files.forEach(function (f) {
-      rimraf(path.join(p, f), options, function (er) {
-        if (errState)
-          return
-        if (er)
-          return cb(errState = er)
-        if (--n === 0)
-          options.rmdir(p, cb)
-      })
-    })
-  })
-}
-
-// this looks simpler, and is strictly *faster*, but will
-// tie up the JavaScript thread and fail on excessively
-// deep directory trees.
-function rimrafSync (p, options) {
-  options = options || {}
-  defaults(options)
-
-  assert(p, 'rimraf: missing path')
-  assert.equal(typeof p, 'string', 'rimraf: path should be a string')
-  assert(options, 'rimraf: missing options')
-  assert.equal(typeof options, 'object', 'rimraf: options should be object')
-
-  var results
-
-  if (options.disableGlob || !glob.hasMagic(p)) {
-    results = [p]
-  } else {
-    try {
-      options.lstatSync(p)
-      results = [p]
-    } catch (er) {
-      results = glob.sync(p, options.glob)
+    // Try w/ rename first, and try copy + remove if EXDEV
+    await fs.rename(src, dest)
+  } catch (err) {
+    if (err.code !== 'EXDEV') {
+      throw err
     }
-  }
-
-  if (!results.length)
-    return
-
-  for (var i = 0; i < results.length; i++) {
-    var p = results[i]
-
-    try {
-      var st = options.lstatSync(p)
-    } catch (er) {
-      if (er.code === "ENOENT")
-        return
-
-      // Windows can EPERM on stat.  Life is suffering.
-      if (er.code === "EPERM" && isWindows)
-        fixWinEPERMSync(p, options, er)
-    }
-
-    try {
-      // sunos lets the root user unlink directories, which is... weird.
-      if (st && st.isDirectory())
-        rmdirSync(p, options, null)
-      else
-        options.unlinkSync(p)
-    } catch (er) {
-      if (er.code === "ENOENT")
-        return
-      if (er.code === "EPERM")
-        return isWindows ? fixWinEPERMSync(p, options, er) : rmdirSync(p, options, er)
-      if (er.code !== "EISDIR")
-        throw er
-
-      rmdirSync(p, options, er)
-    }
+    await moveAcrossDevice(src, dest, overwrite)
   }
 }
 
-function rmdirSync (p, options, originalEr) {
-  assert(p)
-  assert(options)
-  if (originalEr)
-    assert(originalEr instanceof Error)
-
-  try {
-    options.rmdirSync(p)
-  } catch (er) {
-    if (er.code === "ENOENT")
-      return
-    if (er.code === "ENOTDIR")
-      throw originalEr
-    if (er.code === "ENOTEMPTY" || er.code === "EEXIST" || er.code === "EPERM")
-      rmkidsSync(p, options)
+async function moveAcrossDevice (src, dest, overwrite) {
+  const opts = {
+    overwrite,
+    errorOnExist: true,
+    preserveTimestamps: true
   }
+
+  await copy(src, dest, opts)
+  return remove(src)
 }
 
-function rmkidsSync (p, options) {
-  assert(p)
-  assert(options)
-  options.readdirSync(p).forEach(function (f) {
-    rimrafSync(path.join(p, f), options)
-  })
-
-  // We only end up here once we got ENOTEMPTY at least once, and
-  // at this point, we are guaranteed to have removed all the kids.
-  // So, we know that it won't be ENOENT or ENOTDIR or anything else.
-  // try really hard to delete stuff on windows, because it has a
-  // PROFOUNDLY annoying habit of not closing handles promptly when
-  // files are deleted, resulting in spurious ENOTEMPTY errors.
-  var retries = isWindows ? 100 : 1
-  var i = 0
-  do {
-    var threw = true
-    try {
-      var ret = options.rmdirSync(p, options)
-      threw = false
-      return ret
-    } finally {
-      if (++i < retries && threw)
-        continue
-    }
-  } while (true)
-}
+module.exports = move
 
 
 /***/ }),
 
-/***/ 7625:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-exports.alphasort = alphasort
-exports.alphasorti = alphasorti
-exports.setopts = setopts
-exports.ownProp = ownProp
-exports.makeAbs = makeAbs
-exports.finish = finish
-exports.mark = mark
-exports.isIgnored = isIgnored
-exports.childrenIgnored = childrenIgnored
-
-function ownProp (obj, field) {
-  return Object.prototype.hasOwnProperty.call(obj, field)
-}
-
-var path = __nccwpck_require__(1017)
-var minimatch = __nccwpck_require__(3973)
-var isAbsolute = __nccwpck_require__(8714)
-var Minimatch = minimatch.Minimatch
-
-function alphasorti (a, b) {
-  return a.toLowerCase().localeCompare(b.toLowerCase())
-}
-
-function alphasort (a, b) {
-  return a.localeCompare(b)
-}
-
-function setupIgnores (self, options) {
-  self.ignore = options.ignore || []
-
-  if (!Array.isArray(self.ignore))
-    self.ignore = [self.ignore]
-
-  if (self.ignore.length) {
-    self.ignore = self.ignore.map(ignoreMap)
-  }
-}
-
-// ignore patterns are always in dot:true mode.
-function ignoreMap (pattern) {
-  var gmatcher = null
-  if (pattern.slice(-3) === '/**') {
-    var gpattern = pattern.replace(/(\/\*\*)+$/, '')
-    gmatcher = new Minimatch(gpattern, { dot: true })
-  }
-
-  return {
-    matcher: new Minimatch(pattern, { dot: true }),
-    gmatcher: gmatcher
-  }
-}
-
-function setopts (self, pattern, options) {
-  if (!options)
-    options = {}
-
-  // base-matching: just use globstar for that.
-  if (options.matchBase && -1 === pattern.indexOf("/")) {
-    if (options.noglobstar) {
-      throw new Error("base matching requires globstar")
-    }
-    pattern = "**/" + pattern
-  }
-
-  self.silent = !!options.silent
-  self.pattern = pattern
-  self.strict = options.strict !== false
-  self.realpath = !!options.realpath
-  self.realpathCache = options.realpathCache || Object.create(null)
-  self.follow = !!options.follow
-  self.dot = !!options.dot
-  self.mark = !!options.mark
-  self.nodir = !!options.nodir
-  if (self.nodir)
-    self.mark = true
-  self.sync = !!options.sync
-  self.nounique = !!options.nounique
-  self.nonull = !!options.nonull
-  self.nosort = !!options.nosort
-  self.nocase = !!options.nocase
-  self.stat = !!options.stat
-  self.noprocess = !!options.noprocess
-  self.absolute = !!options.absolute
-
-  self.maxLength = options.maxLength || Infinity
-  self.cache = options.cache || Object.create(null)
-  self.statCache = options.statCache || Object.create(null)
-  self.symlinks = options.symlinks || Object.create(null)
-
-  setupIgnores(self, options)
-
-  self.changedCwd = false
-  var cwd = process.cwd()
-  if (!ownProp(options, "cwd"))
-    self.cwd = cwd
-  else {
-    self.cwd = path.resolve(options.cwd)
-    self.changedCwd = self.cwd !== cwd
-  }
-
-  self.root = options.root || path.resolve(self.cwd, "/")
-  self.root = path.resolve(self.root)
-  if (process.platform === "win32")
-    self.root = self.root.replace(/\\/g, "/")
-
-  // TODO: is an absolute `cwd` supposed to be resolved against `root`?
-  // e.g. { cwd: '/test', root: __dirname } === path.join(__dirname, '/test')
-  self.cwdAbs = isAbsolute(self.cwd) ? self.cwd : makeAbs(self, self.cwd)
-  if (process.platform === "win32")
-    self.cwdAbs = self.cwdAbs.replace(/\\/g, "/")
-  self.nomount = !!options.nomount
-
-  // disable comments and negation in Minimatch.
-  // Note that they are not supported in Glob itself anyway.
-  options.nonegate = true
-  options.nocomment = true
-
-  self.minimatch = new Minimatch(pattern, options)
-  self.options = self.minimatch.options
-}
-
-function finish (self) {
-  var nou = self.nounique
-  var all = nou ? [] : Object.create(null)
-
-  for (var i = 0, l = self.matches.length; i < l; i ++) {
-    var matches = self.matches[i]
-    if (!matches || Object.keys(matches).length === 0) {
-      if (self.nonull) {
-        // do like the shell, and spit out the literal glob
-        var literal = self.minimatch.globSet[i]
-        if (nou)
-          all.push(literal)
-        else
-          all[literal] = true
-      }
-    } else {
-      // had matches
-      var m = Object.keys(matches)
-      if (nou)
-        all.push.apply(all, m)
-      else
-        m.forEach(function (m) {
-          all[m] = true
-        })
-    }
-  }
-
-  if (!nou)
-    all = Object.keys(all)
-
-  if (!self.nosort)
-    all = all.sort(self.nocase ? alphasorti : alphasort)
-
-  // at *some* point we statted all of these
-  if (self.mark) {
-    for (var i = 0; i < all.length; i++) {
-      all[i] = self._mark(all[i])
-    }
-    if (self.nodir) {
-      all = all.filter(function (e) {
-        var notDir = !(/\/$/.test(e))
-        var c = self.cache[e] || self.cache[makeAbs(self, e)]
-        if (notDir && c)
-          notDir = c !== 'DIR' && !Array.isArray(c)
-        return notDir
-      })
-    }
-  }
-
-  if (self.ignore.length)
-    all = all.filter(function(m) {
-      return !isIgnored(self, m)
-    })
-
-  self.found = all
-}
-
-function mark (self, p) {
-  var abs = makeAbs(self, p)
-  var c = self.cache[abs]
-  var m = p
-  if (c) {
-    var isDir = c === 'DIR' || Array.isArray(c)
-    var slash = p.slice(-1) === '/'
-
-    if (isDir && !slash)
-      m += '/'
-    else if (!isDir && slash)
-      m = m.slice(0, -1)
-
-    if (m !== p) {
-      var mabs = makeAbs(self, m)
-      self.statCache[mabs] = self.statCache[abs]
-      self.cache[mabs] = self.cache[abs]
-    }
-  }
-
-  return m
-}
-
-// lotta situps...
-function makeAbs (self, f) {
-  var abs = f
-  if (f.charAt(0) === '/') {
-    abs = path.join(self.root, f)
-  } else if (isAbsolute(f) || f === '') {
-    abs = f
-  } else if (self.changedCwd) {
-    abs = path.resolve(self.cwd, f)
-  } else {
-    abs = path.resolve(f)
-  }
-
-  if (process.platform === 'win32')
-    abs = abs.replace(/\\/g, '/')
-
-  return abs
-}
-
-
-// Return true, if pattern ends with globstar '**', for the accompanying parent directory.
-// Ex:- If node_modules/** is the pattern, add 'node_modules' to ignore list along with it's contents
-function isIgnored (self, path) {
-  if (!self.ignore.length)
-    return false
-
-  return self.ignore.some(function(item) {
-    return item.matcher.match(path) || !!(item.gmatcher && item.gmatcher.match(path))
-  })
-}
-
-function childrenIgnored (self, path) {
-  if (!self.ignore.length)
-    return false
-
-  return self.ignore.some(function(item) {
-    return !!(item.gmatcher && item.gmatcher.match(path))
-  })
-}
-
-
-/***/ }),
-
-/***/ 1957:
+/***/ 1832:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-// Approach:
-//
-// 1. Get the minimatch set
-// 2. For each pattern in the set, PROCESS(pattern, false)
-// 3. Store matches per-set, then uniq them
-//
-// PROCESS(pattern, inGlobStar)
-// Get the first [n] items from pattern that are all strings
-// Join these together.  This is PREFIX.
-//   If there is no more remaining, then stat(PREFIX) and
-//   add to matches if it succeeds.  END.
-//
-// If inGlobStar and PREFIX is symlink and points to dir
-//   set ENTRIES = []
-// else readdir(PREFIX) as ENTRIES
-//   If fail, END
-//
-// with ENTRIES
-//   If pattern[n] is GLOBSTAR
-//     // handle the case where the globstar match is empty
-//     // by pruning it out, and testing the resulting pattern
-//     PROCESS(pattern[0..n] + pattern[n+1 .. $], false)
-//     // handle other cases.
-//     for ENTRY in ENTRIES (not dotfiles)
-//       // attach globstar + tail onto the entry
-//       // Mark that this entry is a globstar match
-//       PROCESS(pattern[0..n] + ENTRY + pattern[n .. $], true)
-//
-//   else // not globstar
-//     for ENTRY in ENTRIES (not dotfiles, unless pattern[n] is dot)
-//       Test ENTRY against pattern[n]
-//       If fails, continue
-//       If passes, PROCESS(pattern[0..n] + item + pattern[n+1 .. $])
-//
-// Caveat:
-//   Cache all stats and readdirs results to minimize syscall.  Since all
-//   we ever care about is existence and directory-ness, we can just keep
-//   `true` for files, and [children,...] for directories, or `false` for
-//   things that don't exist.
+"use strict";
 
-module.exports = glob
 
-var fs = __nccwpck_require__(7147)
-var rp = __nccwpck_require__(6863)
-var minimatch = __nccwpck_require__(3973)
-var Minimatch = minimatch.Minimatch
-var inherits = __nccwpck_require__(4124)
-var EE = (__nccwpck_require__(2361).EventEmitter)
-var path = __nccwpck_require__(1017)
-var assert = __nccwpck_require__(9491)
-var isAbsolute = __nccwpck_require__(8714)
-var globSync = __nccwpck_require__(9010)
-var common = __nccwpck_require__(7625)
-var alphasort = common.alphasort
-var alphasorti = common.alphasorti
-var setopts = common.setopts
-var ownProp = common.ownProp
-var inflight = __nccwpck_require__(2492)
-var util = __nccwpck_require__(3837)
-var childrenIgnored = common.childrenIgnored
-var isIgnored = common.isIgnored
+const u = (__nccwpck_require__(9046).fromPromise)
+const fs = __nccwpck_require__(1176)
+const path = __nccwpck_require__(1017)
+const mkdir = __nccwpck_require__(8605)
+const pathExists = (__nccwpck_require__(3835).pathExists)
 
-var once = __nccwpck_require__(1223)
+async function outputFile (file, data, encoding = 'utf-8') {
+  const dir = path.dirname(file)
 
-function glob (pattern, options, cb) {
-  if (typeof options === 'function') cb = options, options = {}
-  if (!options) options = {}
-
-  if (options.sync) {
-    if (cb)
-      throw new TypeError('callback provided to sync glob')
-    return globSync(pattern, options)
+  if (!(await pathExists(dir))) {
+    await mkdir.mkdirs(dir)
   }
 
-  return new Glob(pattern, options, cb)
+  return fs.writeFile(file, data, encoding)
 }
 
-glob.sync = globSync
-var GlobSync = glob.GlobSync = globSync.GlobSync
-
-// old api surface
-glob.glob = glob
-
-function extend (origin, add) {
-  if (add === null || typeof add !== 'object') {
-    return origin
+function outputFileSync (file, ...args) {
+  const dir = path.dirname(file)
+  if (!fs.existsSync(dir)) {
+    mkdir.mkdirsSync(dir)
   }
 
-  var keys = Object.keys(add)
-  var i = keys.length
-  while (i--) {
-    origin[keys[i]] = add[keys[i]]
-  }
-  return origin
+  fs.writeFileSync(file, ...args)
 }
 
-glob.hasMagic = function (pattern, options_) {
-  var options = extend({}, options_)
-  options.noprocess = true
-
-  var g = new Glob(pattern, options)
-  var set = g.minimatch.set
-
-  if (!pattern)
-    return false
-
-  if (set.length > 1)
-    return true
-
-  for (var j = 0; j < set[0].length; j++) {
-    if (typeof set[0][j] !== 'string')
-      return true
-  }
-
-  return false
-}
-
-glob.Glob = Glob
-inherits(Glob, EE)
-function Glob (pattern, options, cb) {
-  if (typeof options === 'function') {
-    cb = options
-    options = null
-  }
-
-  if (options && options.sync) {
-    if (cb)
-      throw new TypeError('callback provided to sync glob')
-    return new GlobSync(pattern, options)
-  }
-
-  if (!(this instanceof Glob))
-    return new Glob(pattern, options, cb)
-
-  setopts(this, pattern, options)
-  this._didRealPath = false
-
-  // process each pattern in the minimatch set
-  var n = this.minimatch.set.length
-
-  // The matches are stored as {<filename>: true,...} so that
-  // duplicates are automagically pruned.
-  // Later, we do an Object.keys() on these.
-  // Keep them as a list so we can fill in when nonull is set.
-  this.matches = new Array(n)
-
-  if (typeof cb === 'function') {
-    cb = once(cb)
-    this.on('error', cb)
-    this.on('end', function (matches) {
-      cb(null, matches)
-    })
-  }
-
-  var self = this
-  this._processing = 0
-
-  this._emitQueue = []
-  this._processQueue = []
-  this.paused = false
-
-  if (this.noprocess)
-    return this
-
-  if (n === 0)
-    return done()
-
-  var sync = true
-  for (var i = 0; i < n; i ++) {
-    this._process(this.minimatch.set[i], i, false, done)
-  }
-  sync = false
-
-  function done () {
-    --self._processing
-    if (self._processing <= 0) {
-      if (sync) {
-        process.nextTick(function () {
-          self._finish()
-        })
-      } else {
-        self._finish()
-      }
-    }
-  }
-}
-
-Glob.prototype._finish = function () {
-  assert(this instanceof Glob)
-  if (this.aborted)
-    return
-
-  if (this.realpath && !this._didRealpath)
-    return this._realpath()
-
-  common.finish(this)
-  this.emit('end', this.found)
-}
-
-Glob.prototype._realpath = function () {
-  if (this._didRealpath)
-    return
-
-  this._didRealpath = true
-
-  var n = this.matches.length
-  if (n === 0)
-    return this._finish()
-
-  var self = this
-  for (var i = 0; i < this.matches.length; i++)
-    this._realpathSet(i, next)
-
-  function next () {
-    if (--n === 0)
-      self._finish()
-  }
-}
-
-Glob.prototype._realpathSet = function (index, cb) {
-  var matchset = this.matches[index]
-  if (!matchset)
-    return cb()
-
-  var found = Object.keys(matchset)
-  var self = this
-  var n = found.length
-
-  if (n === 0)
-    return cb()
-
-  var set = this.matches[index] = Object.create(null)
-  found.forEach(function (p, i) {
-    // If there's a problem with the stat, then it means that
-    // one or more of the links in the realpath couldn't be
-    // resolved.  just return the abs value in that case.
-    p = self._makeAbs(p)
-    rp.realpath(p, self.realpathCache, function (er, real) {
-      if (!er)
-        set[real] = true
-      else if (er.syscall === 'stat')
-        set[p] = true
-      else
-        self.emit('error', er) // srsly wtf right here
-
-      if (--n === 0) {
-        self.matches[index] = set
-        cb()
-      }
-    })
-  })
-}
-
-Glob.prototype._mark = function (p) {
-  return common.mark(this, p)
-}
-
-Glob.prototype._makeAbs = function (f) {
-  return common.makeAbs(this, f)
-}
-
-Glob.prototype.abort = function () {
-  this.aborted = true
-  this.emit('abort')
-}
-
-Glob.prototype.pause = function () {
-  if (!this.paused) {
-    this.paused = true
-    this.emit('pause')
-  }
-}
-
-Glob.prototype.resume = function () {
-  if (this.paused) {
-    this.emit('resume')
-    this.paused = false
-    if (this._emitQueue.length) {
-      var eq = this._emitQueue.slice(0)
-      this._emitQueue.length = 0
-      for (var i = 0; i < eq.length; i ++) {
-        var e = eq[i]
-        this._emitMatch(e[0], e[1])
-      }
-    }
-    if (this._processQueue.length) {
-      var pq = this._processQueue.slice(0)
-      this._processQueue.length = 0
-      for (var i = 0; i < pq.length; i ++) {
-        var p = pq[i]
-        this._processing--
-        this._process(p[0], p[1], p[2], p[3])
-      }
-    }
-  }
-}
-
-Glob.prototype._process = function (pattern, index, inGlobStar, cb) {
-  assert(this instanceof Glob)
-  assert(typeof cb === 'function')
-
-  if (this.aborted)
-    return
-
-  this._processing++
-  if (this.paused) {
-    this._processQueue.push([pattern, index, inGlobStar, cb])
-    return
-  }
-
-  //console.error('PROCESS %d', this._processing, pattern)
-
-  // Get the first [n] parts of pattern that are all strings.
-  var n = 0
-  while (typeof pattern[n] === 'string') {
-    n ++
-  }
-  // now n is the index of the first one that is *not* a string.
-
-  // see if there's anything else
-  var prefix
-  switch (n) {
-    // if not, then this is rather simple
-    case pattern.length:
-      this._processSimple(pattern.join('/'), index, cb)
-      return
-
-    case 0:
-      // pattern *starts* with some non-trivial item.
-      // going to readdir(cwd), but not include the prefix in matches.
-      prefix = null
-      break
-
-    default:
-      // pattern has some string bits in the front.
-      // whatever it starts with, whether that's 'absolute' like /foo/bar,
-      // or 'relative' like '../baz'
-      prefix = pattern.slice(0, n).join('/')
-      break
-  }
-
-  var remain = pattern.slice(n)
-
-  // get the list of entries.
-  var read
-  if (prefix === null)
-    read = '.'
-  else if (isAbsolute(prefix) || isAbsolute(pattern.join('/'))) {
-    if (!prefix || !isAbsolute(prefix))
-      prefix = '/' + prefix
-    read = prefix
-  } else
-    read = prefix
-
-  var abs = this._makeAbs(read)
-
-  //if ignored, skip _processing
-  if (childrenIgnored(this, read))
-    return cb()
-
-  var isGlobStar = remain[0] === minimatch.GLOBSTAR
-  if (isGlobStar)
-    this._processGlobStar(prefix, read, abs, remain, index, inGlobStar, cb)
-  else
-    this._processReaddir(prefix, read, abs, remain, index, inGlobStar, cb)
-}
-
-Glob.prototype._processReaddir = function (prefix, read, abs, remain, index, inGlobStar, cb) {
-  var self = this
-  this._readdir(abs, inGlobStar, function (er, entries) {
-    return self._processReaddir2(prefix, read, abs, remain, index, inGlobStar, entries, cb)
-  })
-}
-
-Glob.prototype._processReaddir2 = function (prefix, read, abs, remain, index, inGlobStar, entries, cb) {
-
-  // if the abs isn't a dir, then nothing can match!
-  if (!entries)
-    return cb()
-
-  // It will only match dot entries if it starts with a dot, or if
-  // dot is set.  Stuff like @(.foo|.bar) isn't allowed.
-  var pn = remain[0]
-  var negate = !!this.minimatch.negate
-  var rawGlob = pn._glob
-  var dotOk = this.dot || rawGlob.charAt(0) === '.'
-
-  var matchedEntries = []
-  for (var i = 0; i < entries.length; i++) {
-    var e = entries[i]
-    if (e.charAt(0) !== '.' || dotOk) {
-      var m
-      if (negate && !prefix) {
-        m = !e.match(pn)
-      } else {
-        m = e.match(pn)
-      }
-      if (m)
-        matchedEntries.push(e)
-    }
-  }
-
-  //console.error('prd2', prefix, entries, remain[0]._glob, matchedEntries)
-
-  var len = matchedEntries.length
-  // If there are no matched entries, then nothing matches.
-  if (len === 0)
-    return cb()
-
-  // if this is the last remaining pattern bit, then no need for
-  // an additional stat *unless* the user has specified mark or
-  // stat explicitly.  We know they exist, since readdir returned
-  // them.
-
-  if (remain.length === 1 && !this.mark && !this.stat) {
-    if (!this.matches[index])
-      this.matches[index] = Object.create(null)
-
-    for (var i = 0; i < len; i ++) {
-      var e = matchedEntries[i]
-      if (prefix) {
-        if (prefix !== '/')
-          e = prefix + '/' + e
-        else
-          e = prefix + e
-      }
-
-      if (e.charAt(0) === '/' && !this.nomount) {
-        e = path.join(this.root, e)
-      }
-      this._emitMatch(index, e)
-    }
-    // This was the last one, and no stats were needed
-    return cb()
-  }
-
-  // now test all matched entries as stand-ins for that part
-  // of the pattern.
-  remain.shift()
-  for (var i = 0; i < len; i ++) {
-    var e = matchedEntries[i]
-    var newPattern
-    if (prefix) {
-      if (prefix !== '/')
-        e = prefix + '/' + e
-      else
-        e = prefix + e
-    }
-    this._process([e].concat(remain), index, inGlobStar, cb)
-  }
-  cb()
-}
-
-Glob.prototype._emitMatch = function (index, e) {
-  if (this.aborted)
-    return
-
-  if (isIgnored(this, e))
-    return
-
-  if (this.paused) {
-    this._emitQueue.push([index, e])
-    return
-  }
-
-  var abs = isAbsolute(e) ? e : this._makeAbs(e)
-
-  if (this.mark)
-    e = this._mark(e)
-
-  if (this.absolute)
-    e = abs
-
-  if (this.matches[index][e])
-    return
-
-  if (this.nodir) {
-    var c = this.cache[abs]
-    if (c === 'DIR' || Array.isArray(c))
-      return
-  }
-
-  this.matches[index][e] = true
-
-  var st = this.statCache[abs]
-  if (st)
-    this.emit('stat', e, st)
-
-  this.emit('match', e)
-}
-
-Glob.prototype._readdirInGlobStar = function (abs, cb) {
-  if (this.aborted)
-    return
-
-  // follow all symlinked directories forever
-  // just proceed as if this is a non-globstar situation
-  if (this.follow)
-    return this._readdir(abs, false, cb)
-
-  var lstatkey = 'lstat\0' + abs
-  var self = this
-  var lstatcb = inflight(lstatkey, lstatcb_)
-
-  if (lstatcb)
-    fs.lstat(abs, lstatcb)
-
-  function lstatcb_ (er, lstat) {
-    if (er && er.code === 'ENOENT')
-      return cb()
-
-    var isSym = lstat && lstat.isSymbolicLink()
-    self.symlinks[abs] = isSym
-
-    // If it's not a symlink or a dir, then it's definitely a regular file.
-    // don't bother doing a readdir in that case.
-    if (!isSym && lstat && !lstat.isDirectory()) {
-      self.cache[abs] = 'FILE'
-      cb()
-    } else
-      self._readdir(abs, false, cb)
-  }
-}
-
-Glob.prototype._readdir = function (abs, inGlobStar, cb) {
-  if (this.aborted)
-    return
-
-  cb = inflight('readdir\0'+abs+'\0'+inGlobStar, cb)
-  if (!cb)
-    return
-
-  //console.error('RD %j %j', +inGlobStar, abs)
-  if (inGlobStar && !ownProp(this.symlinks, abs))
-    return this._readdirInGlobStar(abs, cb)
-
-  if (ownProp(this.cache, abs)) {
-    var c = this.cache[abs]
-    if (!c || c === 'FILE')
-      return cb()
-
-    if (Array.isArray(c))
-      return cb(null, c)
-  }
-
-  var self = this
-  fs.readdir(abs, readdirCb(this, abs, cb))
-}
-
-function readdirCb (self, abs, cb) {
-  return function (er, entries) {
-    if (er)
-      self._readdirError(abs, er, cb)
-    else
-      self._readdirEntries(abs, entries, cb)
-  }
-}
-
-Glob.prototype._readdirEntries = function (abs, entries, cb) {
-  if (this.aborted)
-    return
-
-  // if we haven't asked to stat everything, then just
-  // assume that everything in there exists, so we can avoid
-  // having to stat it a second time.
-  if (!this.mark && !this.stat) {
-    for (var i = 0; i < entries.length; i ++) {
-      var e = entries[i]
-      if (abs === '/')
-        e = abs + e
-      else
-        e = abs + '/' + e
-      this.cache[e] = true
-    }
-  }
-
-  this.cache[abs] = entries
-  return cb(null, entries)
-}
-
-Glob.prototype._readdirError = function (f, er, cb) {
-  if (this.aborted)
-    return
-
-  // handle errors, and cache the information
-  switch (er.code) {
-    case 'ENOTSUP': // https://github.com/isaacs/node-glob/issues/205
-    case 'ENOTDIR': // totally normal. means it *does* exist.
-      var abs = this._makeAbs(f)
-      this.cache[abs] = 'FILE'
-      if (abs === this.cwdAbs) {
-        var error = new Error(er.code + ' invalid cwd ' + this.cwd)
-        error.path = this.cwd
-        error.code = er.code
-        this.emit('error', error)
-        this.abort()
-      }
-      break
-
-    case 'ENOENT': // not terribly unusual
-    case 'ELOOP':
-    case 'ENAMETOOLONG':
-    case 'UNKNOWN':
-      this.cache[this._makeAbs(f)] = false
-      break
-
-    default: // some unusual error.  Treat as failure.
-      this.cache[this._makeAbs(f)] = false
-      if (this.strict) {
-        this.emit('error', er)
-        // If the error is handled, then we abort
-        // if not, we threw out of here
-        this.abort()
-      }
-      if (!this.silent)
-        console.error('glob error', er)
-      break
-  }
-
-  return cb()
-}
-
-Glob.prototype._processGlobStar = function (prefix, read, abs, remain, index, inGlobStar, cb) {
-  var self = this
-  this._readdir(abs, inGlobStar, function (er, entries) {
-    self._processGlobStar2(prefix, read, abs, remain, index, inGlobStar, entries, cb)
-  })
-}
-
-
-Glob.prototype._processGlobStar2 = function (prefix, read, abs, remain, index, inGlobStar, entries, cb) {
-  //console.error('pgs2', prefix, remain[0], entries)
-
-  // no entries means not a dir, so it can never have matches
-  // foo.txt/** doesn't match foo.txt
-  if (!entries)
-    return cb()
-
-  // test without the globstar, and with every child both below
-  // and replacing the globstar.
-  var remainWithoutGlobStar = remain.slice(1)
-  var gspref = prefix ? [ prefix ] : []
-  var noGlobStar = gspref.concat(remainWithoutGlobStar)
-
-  // the noGlobStar pattern exits the inGlobStar state
-  this._process(noGlobStar, index, false, cb)
-
-  var isSym = this.symlinks[abs]
-  var len = entries.length
-
-  // If it's a symlink, and we're in a globstar, then stop
-  if (isSym && inGlobStar)
-    return cb()
-
-  for (var i = 0; i < len; i++) {
-    var e = entries[i]
-    if (e.charAt(0) === '.' && !this.dot)
-      continue
-
-    // these two cases enter the inGlobStar state
-    var instead = gspref.concat(entries[i], remainWithoutGlobStar)
-    this._process(instead, index, true, cb)
-
-    var below = gspref.concat(entries[i], remain)
-    this._process(below, index, true, cb)
-  }
-
-  cb()
-}
-
-Glob.prototype._processSimple = function (prefix, index, cb) {
-  // XXX review this.  Shouldn't it be doing the mounting etc
-  // before doing stat?  kinda weird?
-  var self = this
-  this._stat(prefix, function (er, exists) {
-    self._processSimple2(prefix, index, er, exists, cb)
-  })
-}
-Glob.prototype._processSimple2 = function (prefix, index, er, exists, cb) {
-
-  //console.error('ps2', prefix, exists)
-
-  if (!this.matches[index])
-    this.matches[index] = Object.create(null)
-
-  // If it doesn't exist, then just mark the lack of results
-  if (!exists)
-    return cb()
-
-  if (prefix && isAbsolute(prefix) && !this.nomount) {
-    var trail = /[\/\\]$/.test(prefix)
-    if (prefix.charAt(0) === '/') {
-      prefix = path.join(this.root, prefix)
-    } else {
-      prefix = path.resolve(this.root, prefix)
-      if (trail)
-        prefix += '/'
-    }
-  }
-
-  if (process.platform === 'win32')
-    prefix = prefix.replace(/\\/g, '/')
-
-  // Mark this as a match
-  this._emitMatch(index, prefix)
-  cb()
-}
-
-// Returns either 'DIR', 'FILE', or false
-Glob.prototype._stat = function (f, cb) {
-  var abs = this._makeAbs(f)
-  var needDir = f.slice(-1) === '/'
-
-  if (f.length > this.maxLength)
-    return cb()
-
-  if (!this.stat && ownProp(this.cache, abs)) {
-    var c = this.cache[abs]
-
-    if (Array.isArray(c))
-      c = 'DIR'
-
-    // It exists, but maybe not how we need it
-    if (!needDir || c === 'DIR')
-      return cb(null, c)
-
-    if (needDir && c === 'FILE')
-      return cb()
-
-    // otherwise we have to stat, because maybe c=true
-    // if we know it exists, but not what it is.
-  }
-
-  var exists
-  var stat = this.statCache[abs]
-  if (stat !== undefined) {
-    if (stat === false)
-      return cb(null, stat)
-    else {
-      var type = stat.isDirectory() ? 'DIR' : 'FILE'
-      if (needDir && type === 'FILE')
-        return cb()
-      else
-        return cb(null, type, stat)
-    }
-  }
-
-  var self = this
-  var statcb = inflight('stat\0' + abs, lstatcb_)
-  if (statcb)
-    fs.lstat(abs, statcb)
-
-  function lstatcb_ (er, lstat) {
-    if (lstat && lstat.isSymbolicLink()) {
-      // If it's a symlink, then treat it as the target, unless
-      // the target does not exist, then treat it as a file.
-      return fs.stat(abs, function (er, stat) {
-        if (er)
-          self._stat2(f, abs, null, lstat, cb)
-        else
-          self._stat2(f, abs, er, stat, cb)
-      })
-    } else {
-      self._stat2(f, abs, er, lstat, cb)
-    }
-  }
-}
-
-Glob.prototype._stat2 = function (f, abs, er, stat, cb) {
-  if (er && (er.code === 'ENOENT' || er.code === 'ENOTDIR')) {
-    this.statCache[abs] = false
-    return cb()
-  }
-
-  var needDir = f.slice(-1) === '/'
-  this.statCache[abs] = stat
-
-  if (abs.slice(-1) === '/' && stat && !stat.isDirectory())
-    return cb(null, false, stat)
-
-  var c = true
-  if (stat)
-    c = stat.isDirectory() ? 'DIR' : 'FILE'
-  this.cache[abs] = this.cache[abs] || c
-
-  if (needDir && c === 'FILE')
-    return cb()
-
-  return cb(null, c, stat)
+module.exports = {
+  outputFile: u(outputFile),
+  outputFileSync
 }
 
 
 /***/ }),
 
-/***/ 9010:
+/***/ 3835:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-module.exports = globSync
-globSync.GlobSync = GlobSync
+"use strict";
 
-var fs = __nccwpck_require__(7147)
-var rp = __nccwpck_require__(6863)
-var minimatch = __nccwpck_require__(3973)
-var Minimatch = minimatch.Minimatch
-var Glob = (__nccwpck_require__(1957).Glob)
-var util = __nccwpck_require__(3837)
-var path = __nccwpck_require__(1017)
-var assert = __nccwpck_require__(9491)
-var isAbsolute = __nccwpck_require__(8714)
-var common = __nccwpck_require__(7625)
-var alphasort = common.alphasort
-var alphasorti = common.alphasorti
-var setopts = common.setopts
-var ownProp = common.ownProp
-var childrenIgnored = common.childrenIgnored
-var isIgnored = common.isIgnored
+const u = (__nccwpck_require__(9046).fromPromise)
+const fs = __nccwpck_require__(1176)
 
-function globSync (pattern, options) {
-  if (typeof options === 'function' || arguments.length === 3)
-    throw new TypeError('callback provided to sync glob\n'+
-                        'See: https://github.com/isaacs/node-glob/issues/167')
-
-  return new GlobSync(pattern, options).found
+function pathExists (path) {
+  return fs.access(path).then(() => true).catch(() => false)
 }
 
-function GlobSync (pattern, options) {
-  if (!pattern)
-    throw new Error('must provide pattern')
-
-  if (typeof options === 'function' || arguments.length === 3)
-    throw new TypeError('callback provided to sync glob\n'+
-                        'See: https://github.com/isaacs/node-glob/issues/167')
-
-  if (!(this instanceof GlobSync))
-    return new GlobSync(pattern, options)
-
-  setopts(this, pattern, options)
-
-  if (this.noprocess)
-    return this
-
-  var n = this.minimatch.set.length
-  this.matches = new Array(n)
-  for (var i = 0; i < n; i ++) {
-    this._process(this.minimatch.set[i], i, false)
-  }
-  this._finish()
+module.exports = {
+  pathExists: u(pathExists),
+  pathExistsSync: fs.existsSync
 }
 
-GlobSync.prototype._finish = function () {
-  assert(this instanceof GlobSync)
-  if (this.realpath) {
-    var self = this
-    this.matches.forEach(function (matchset, index) {
-      var set = self.matches[index] = Object.create(null)
-      for (var p in matchset) {
-        try {
-          p = self._makeAbs(p)
-          var real = rp.realpathSync(p, self.realpathCache)
-          set[real] = true
-        } catch (er) {
-          if (er.syscall === 'stat')
-            set[self._makeAbs(p)] = true
-          else
-            throw er
-        }
-      }
+
+/***/ }),
+
+/***/ 7357:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const fs = __nccwpck_require__(7758)
+const u = (__nccwpck_require__(9046).fromCallback)
+
+function remove (path, callback) {
+  fs.rm(path, { recursive: true, force: true }, callback)
+}
+
+function removeSync (path) {
+  fs.rmSync(path, { recursive: true, force: true })
+}
+
+module.exports = {
+  remove: u(remove),
+  removeSync
+}
+
+
+/***/ }),
+
+/***/ 3901:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const fs = __nccwpck_require__(1176)
+const path = __nccwpck_require__(1017)
+const u = (__nccwpck_require__(9046).fromPromise)
+
+function getStats (src, dest, opts) {
+  const statFunc = opts.dereference
+    ? (file) => fs.stat(file, { bigint: true })
+    : (file) => fs.lstat(file, { bigint: true })
+  return Promise.all([
+    statFunc(src),
+    statFunc(dest).catch(err => {
+      if (err.code === 'ENOENT') return null
+      throw err
     })
-  }
-  common.finish(this)
+  ]).then(([srcStat, destStat]) => ({ srcStat, destStat }))
 }
 
-
-GlobSync.prototype._process = function (pattern, index, inGlobStar) {
-  assert(this instanceof GlobSync)
-
-  // Get the first [n] parts of pattern that are all strings.
-  var n = 0
-  while (typeof pattern[n] === 'string') {
-    n ++
-  }
-  // now n is the index of the first one that is *not* a string.
-
-  // See if there's anything else
-  var prefix
-  switch (n) {
-    // if not, then this is rather simple
-    case pattern.length:
-      this._processSimple(pattern.join('/'), index)
-      return
-
-    case 0:
-      // pattern *starts* with some non-trivial item.
-      // going to readdir(cwd), but not include the prefix in matches.
-      prefix = null
-      break
-
-    default:
-      // pattern has some string bits in the front.
-      // whatever it starts with, whether that's 'absolute' like /foo/bar,
-      // or 'relative' like '../baz'
-      prefix = pattern.slice(0, n).join('/')
-      break
-  }
-
-  var remain = pattern.slice(n)
-
-  // get the list of entries.
-  var read
-  if (prefix === null)
-    read = '.'
-  else if (isAbsolute(prefix) || isAbsolute(pattern.join('/'))) {
-    if (!prefix || !isAbsolute(prefix))
-      prefix = '/' + prefix
-    read = prefix
-  } else
-    read = prefix
-
-  var abs = this._makeAbs(read)
-
-  //if ignored, skip processing
-  if (childrenIgnored(this, read))
-    return
-
-  var isGlobStar = remain[0] === minimatch.GLOBSTAR
-  if (isGlobStar)
-    this._processGlobStar(prefix, read, abs, remain, index, inGlobStar)
-  else
-    this._processReaddir(prefix, read, abs, remain, index, inGlobStar)
-}
-
-
-GlobSync.prototype._processReaddir = function (prefix, read, abs, remain, index, inGlobStar) {
-  var entries = this._readdir(abs, inGlobStar)
-
-  // if the abs isn't a dir, then nothing can match!
-  if (!entries)
-    return
-
-  // It will only match dot entries if it starts with a dot, or if
-  // dot is set.  Stuff like @(.foo|.bar) isn't allowed.
-  var pn = remain[0]
-  var negate = !!this.minimatch.negate
-  var rawGlob = pn._glob
-  var dotOk = this.dot || rawGlob.charAt(0) === '.'
-
-  var matchedEntries = []
-  for (var i = 0; i < entries.length; i++) {
-    var e = entries[i]
-    if (e.charAt(0) !== '.' || dotOk) {
-      var m
-      if (negate && !prefix) {
-        m = !e.match(pn)
-      } else {
-        m = e.match(pn)
-      }
-      if (m)
-        matchedEntries.push(e)
-    }
-  }
-
-  var len = matchedEntries.length
-  // If there are no matched entries, then nothing matches.
-  if (len === 0)
-    return
-
-  // if this is the last remaining pattern bit, then no need for
-  // an additional stat *unless* the user has specified mark or
-  // stat explicitly.  We know they exist, since readdir returned
-  // them.
-
-  if (remain.length === 1 && !this.mark && !this.stat) {
-    if (!this.matches[index])
-      this.matches[index] = Object.create(null)
-
-    for (var i = 0; i < len; i ++) {
-      var e = matchedEntries[i]
-      if (prefix) {
-        if (prefix.slice(-1) !== '/')
-          e = prefix + '/' + e
-        else
-          e = prefix + e
-      }
-
-      if (e.charAt(0) === '/' && !this.nomount) {
-        e = path.join(this.root, e)
-      }
-      this._emitMatch(index, e)
-    }
-    // This was the last one, and no stats were needed
-    return
-  }
-
-  // now test all matched entries as stand-ins for that part
-  // of the pattern.
-  remain.shift()
-  for (var i = 0; i < len; i ++) {
-    var e = matchedEntries[i]
-    var newPattern
-    if (prefix)
-      newPattern = [prefix, e]
-    else
-      newPattern = [e]
-    this._process(newPattern.concat(remain), index, inGlobStar)
-  }
-}
-
-
-GlobSync.prototype._emitMatch = function (index, e) {
-  if (isIgnored(this, e))
-    return
-
-  var abs = this._makeAbs(e)
-
-  if (this.mark)
-    e = this._mark(e)
-
-  if (this.absolute) {
-    e = abs
-  }
-
-  if (this.matches[index][e])
-    return
-
-  if (this.nodir) {
-    var c = this.cache[abs]
-    if (c === 'DIR' || Array.isArray(c))
-      return
-  }
-
-  this.matches[index][e] = true
-
-  if (this.stat)
-    this._stat(e)
-}
-
-
-GlobSync.prototype._readdirInGlobStar = function (abs) {
-  // follow all symlinked directories forever
-  // just proceed as if this is a non-globstar situation
-  if (this.follow)
-    return this._readdir(abs, false)
-
-  var entries
-  var lstat
-  var stat
+function getStatsSync (src, dest, opts) {
+  let destStat
+  const statFunc = opts.dereference
+    ? (file) => fs.statSync(file, { bigint: true })
+    : (file) => fs.lstatSync(file, { bigint: true })
+  const srcStat = statFunc(src)
   try {
-    lstat = fs.lstatSync(abs)
-  } catch (er) {
-    if (er.code === 'ENOENT') {
-      // lstat failed, doesn't exist
-      return null
+    destStat = statFunc(dest)
+  } catch (err) {
+    if (err.code === 'ENOENT') return { srcStat, destStat: null }
+    throw err
+  }
+  return { srcStat, destStat }
+}
+
+async function checkPaths (src, dest, funcName, opts) {
+  const { srcStat, destStat } = await getStats(src, dest, opts)
+  if (destStat) {
+    if (areIdentical(srcStat, destStat)) {
+      const srcBaseName = path.basename(src)
+      const destBaseName = path.basename(dest)
+      if (funcName === 'move' &&
+        srcBaseName !== destBaseName &&
+        srcBaseName.toLowerCase() === destBaseName.toLowerCase()) {
+        return { srcStat, destStat, isChangingCase: true }
+      }
+      throw new Error('Source and destination must not be the same.')
+    }
+    if (srcStat.isDirectory() && !destStat.isDirectory()) {
+      throw new Error(`Cannot overwrite non-directory '${dest}' with directory '${src}'.`)
+    }
+    if (!srcStat.isDirectory() && destStat.isDirectory()) {
+      throw new Error(`Cannot overwrite directory '${dest}' with non-directory '${src}'.`)
     }
   }
 
-  var isSym = lstat && lstat.isSymbolicLink()
-  this.symlinks[abs] = isSym
+  if (srcStat.isDirectory() && isSrcSubdir(src, dest)) {
+    throw new Error(errMsg(src, dest, funcName))
+  }
 
-  // If it's not a symlink or a dir, then it's definitely a regular file.
-  // don't bother doing a readdir in that case.
-  if (!isSym && lstat && !lstat.isDirectory())
-    this.cache[abs] = 'FILE'
-  else
-    entries = this._readdir(abs, false)
-
-  return entries
+  return { srcStat, destStat }
 }
 
-GlobSync.prototype._readdir = function (abs, inGlobStar) {
-  var entries
+function checkPathsSync (src, dest, funcName, opts) {
+  const { srcStat, destStat } = getStatsSync(src, dest, opts)
 
-  if (inGlobStar && !ownProp(this.symlinks, abs))
-    return this._readdirInGlobStar(abs)
-
-  if (ownProp(this.cache, abs)) {
-    var c = this.cache[abs]
-    if (!c || c === 'FILE')
-      return null
-
-    if (Array.isArray(c))
-      return c
+  if (destStat) {
+    if (areIdentical(srcStat, destStat)) {
+      const srcBaseName = path.basename(src)
+      const destBaseName = path.basename(dest)
+      if (funcName === 'move' &&
+        srcBaseName !== destBaseName &&
+        srcBaseName.toLowerCase() === destBaseName.toLowerCase()) {
+        return { srcStat, destStat, isChangingCase: true }
+      }
+      throw new Error('Source and destination must not be the same.')
+    }
+    if (srcStat.isDirectory() && !destStat.isDirectory()) {
+      throw new Error(`Cannot overwrite non-directory '${dest}' with directory '${src}'.`)
+    }
+    if (!srcStat.isDirectory() && destStat.isDirectory()) {
+      throw new Error(`Cannot overwrite directory '${dest}' with non-directory '${src}'.`)
+    }
   }
+
+  if (srcStat.isDirectory() && isSrcSubdir(src, dest)) {
+    throw new Error(errMsg(src, dest, funcName))
+  }
+  return { srcStat, destStat }
+}
+
+// recursively check if dest parent is a subdirectory of src.
+// It works for all file types including symlinks since it
+// checks the src and dest inodes. It starts from the deepest
+// parent and stops once it reaches the src parent or the root path.
+async function checkParentPaths (src, srcStat, dest, funcName) {
+  const srcParent = path.resolve(path.dirname(src))
+  const destParent = path.resolve(path.dirname(dest))
+  if (destParent === srcParent || destParent === path.parse(destParent).root) return
+
+  let destStat
+  try {
+    destStat = await fs.stat(destParent, { bigint: true })
+  } catch (err) {
+    if (err.code === 'ENOENT') return
+    throw err
+  }
+
+  if (areIdentical(srcStat, destStat)) {
+    throw new Error(errMsg(src, dest, funcName))
+  }
+
+  return checkParentPaths(src, srcStat, destParent, funcName)
+}
+
+function checkParentPathsSync (src, srcStat, dest, funcName) {
+  const srcParent = path.resolve(path.dirname(src))
+  const destParent = path.resolve(path.dirname(dest))
+  if (destParent === srcParent || destParent === path.parse(destParent).root) return
+  let destStat
+  try {
+    destStat = fs.statSync(destParent, { bigint: true })
+  } catch (err) {
+    if (err.code === 'ENOENT') return
+    throw err
+  }
+  if (areIdentical(srcStat, destStat)) {
+    throw new Error(errMsg(src, dest, funcName))
+  }
+  return checkParentPathsSync(src, srcStat, destParent, funcName)
+}
+
+function areIdentical (srcStat, destStat) {
+  return destStat.ino && destStat.dev && destStat.ino === srcStat.ino && destStat.dev === srcStat.dev
+}
+
+// return true if dest is a subdir of src, otherwise false.
+// It only checks the path strings.
+function isSrcSubdir (src, dest) {
+  const srcArr = path.resolve(src).split(path.sep).filter(i => i)
+  const destArr = path.resolve(dest).split(path.sep).filter(i => i)
+  return srcArr.every((cur, i) => destArr[i] === cur)
+}
+
+function errMsg (src, dest, funcName) {
+  return `Cannot ${funcName} '${src}' to a subdirectory of itself, '${dest}'.`
+}
+
+module.exports = {
+  // checkPaths
+  checkPaths: u(checkPaths),
+  checkPathsSync,
+  // checkParent
+  checkParentPaths: u(checkParentPaths),
+  checkParentPathsSync,
+  // Misc
+  isSrcSubdir,
+  areIdentical
+}
+
+
+/***/ }),
+
+/***/ 2548:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const fs = __nccwpck_require__(1176)
+const u = (__nccwpck_require__(9046).fromPromise)
+
+async function utimesMillis (path, atime, mtime) {
+  // if (!HAS_MILLIS_RES) return fs.utimes(path, atime, mtime, callback)
+  const fd = await fs.open(path, 'r+')
+
+  let closeErr = null
 
   try {
-    return this._readdirEntries(abs, fs.readdirSync(abs))
-  } catch (er) {
-    this._readdirError(abs, er)
-    return null
-  }
-}
-
-GlobSync.prototype._readdirEntries = function (abs, entries) {
-  // if we haven't asked to stat everything, then just
-  // assume that everything in there exists, so we can avoid
-  // having to stat it a second time.
-  if (!this.mark && !this.stat) {
-    for (var i = 0; i < entries.length; i ++) {
-      var e = entries[i]
-      if (abs === '/')
-        e = abs + e
-      else
-        e = abs + '/' + e
-      this.cache[e] = true
-    }
-  }
-
-  this.cache[abs] = entries
-
-  // mark and cache dir-ness
-  return entries
-}
-
-GlobSync.prototype._readdirError = function (f, er) {
-  // handle errors, and cache the information
-  switch (er.code) {
-    case 'ENOTSUP': // https://github.com/isaacs/node-glob/issues/205
-    case 'ENOTDIR': // totally normal. means it *does* exist.
-      var abs = this._makeAbs(f)
-      this.cache[abs] = 'FILE'
-      if (abs === this.cwdAbs) {
-        var error = new Error(er.code + ' invalid cwd ' + this.cwd)
-        error.path = this.cwd
-        error.code = er.code
-        throw error
-      }
-      break
-
-    case 'ENOENT': // not terribly unusual
-    case 'ELOOP':
-    case 'ENAMETOOLONG':
-    case 'UNKNOWN':
-      this.cache[this._makeAbs(f)] = false
-      break
-
-    default: // some unusual error.  Treat as failure.
-      this.cache[this._makeAbs(f)] = false
-      if (this.strict)
-        throw er
-      if (!this.silent)
-        console.error('glob error', er)
-      break
-  }
-}
-
-GlobSync.prototype._processGlobStar = function (prefix, read, abs, remain, index, inGlobStar) {
-
-  var entries = this._readdir(abs, inGlobStar)
-
-  // no entries means not a dir, so it can never have matches
-  // foo.txt/** doesn't match foo.txt
-  if (!entries)
-    return
-
-  // test without the globstar, and with every child both below
-  // and replacing the globstar.
-  var remainWithoutGlobStar = remain.slice(1)
-  var gspref = prefix ? [ prefix ] : []
-  var noGlobStar = gspref.concat(remainWithoutGlobStar)
-
-  // the noGlobStar pattern exits the inGlobStar state
-  this._process(noGlobStar, index, false)
-
-  var len = entries.length
-  var isSym = this.symlinks[abs]
-
-  // If it's a symlink, and we're in a globstar, then stop
-  if (isSym && inGlobStar)
-    return
-
-  for (var i = 0; i < len; i++) {
-    var e = entries[i]
-    if (e.charAt(0) === '.' && !this.dot)
-      continue
-
-    // these two cases enter the inGlobStar state
-    var instead = gspref.concat(entries[i], remainWithoutGlobStar)
-    this._process(instead, index, true)
-
-    var below = gspref.concat(entries[i], remain)
-    this._process(below, index, true)
-  }
-}
-
-GlobSync.prototype._processSimple = function (prefix, index) {
-  // XXX review this.  Shouldn't it be doing the mounting etc
-  // before doing stat?  kinda weird?
-  var exists = this._stat(prefix)
-
-  if (!this.matches[index])
-    this.matches[index] = Object.create(null)
-
-  // If it doesn't exist, then just mark the lack of results
-  if (!exists)
-    return
-
-  if (prefix && isAbsolute(prefix) && !this.nomount) {
-    var trail = /[\/\\]$/.test(prefix)
-    if (prefix.charAt(0) === '/') {
-      prefix = path.join(this.root, prefix)
-    } else {
-      prefix = path.resolve(this.root, prefix)
-      if (trail)
-        prefix += '/'
-    }
-  }
-
-  if (process.platform === 'win32')
-    prefix = prefix.replace(/\\/g, '/')
-
-  // Mark this as a match
-  this._emitMatch(index, prefix)
-}
-
-// Returns either 'DIR', 'FILE', or false
-GlobSync.prototype._stat = function (f) {
-  var abs = this._makeAbs(f)
-  var needDir = f.slice(-1) === '/'
-
-  if (f.length > this.maxLength)
-    return false
-
-  if (!this.stat && ownProp(this.cache, abs)) {
-    var c = this.cache[abs]
-
-    if (Array.isArray(c))
-      c = 'DIR'
-
-    // It exists, but maybe not how we need it
-    if (!needDir || c === 'DIR')
-      return c
-
-    if (needDir && c === 'FILE')
-      return false
-
-    // otherwise we have to stat, because maybe c=true
-    // if we know it exists, but not what it is.
-  }
-
-  var exists
-  var stat = this.statCache[abs]
-  if (!stat) {
-    var lstat
+    await fs.futimes(fd, atime, mtime)
+  } finally {
     try {
-      lstat = fs.lstatSync(abs)
-    } catch (er) {
-      if (er && (er.code === 'ENOENT' || er.code === 'ENOTDIR')) {
-        this.statCache[abs] = false
-        return false
-      }
-    }
-
-    if (lstat && lstat.isSymbolicLink()) {
-      try {
-        stat = fs.statSync(abs)
-      } catch (er) {
-        stat = lstat
-      }
-    } else {
-      stat = lstat
+      await fs.close(fd)
+    } catch (e) {
+      closeErr = e
     }
   }
 
-  this.statCache[abs] = stat
-
-  var c = true
-  if (stat)
-    c = stat.isDirectory() ? 'DIR' : 'FILE'
-
-  this.cache[abs] = this.cache[abs] || c
-
-  if (needDir && c === 'FILE')
-    return false
-
-  return c
+  if (closeErr) {
+    throw closeErr
+  }
 }
 
-GlobSync.prototype._mark = function (p) {
-  return common.mark(this, p)
+function utimesMillisSync (path, atime, mtime) {
+  const fd = fs.openSync(path, 'r+')
+  fs.futimesSync(fd, atime, mtime)
+  return fs.closeSync(fd)
 }
 
-GlobSync.prototype._makeAbs = function (f) {
-  return common.makeAbs(this, f)
+module.exports = {
+  utimesMillis: u(utimesMillis),
+  utimesMillisSync
 }
 
 
@@ -59943,67 +55629,6 @@ function patch (fs) {
 
 /***/ }),
 
-/***/ 2492:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-var wrappy = __nccwpck_require__(2940)
-var reqs = Object.create(null)
-var once = __nccwpck_require__(1223)
-
-module.exports = wrappy(inflight)
-
-function inflight (key, cb) {
-  if (reqs[key]) {
-    reqs[key].push(cb)
-    return null
-  } else {
-    reqs[key] = [cb]
-    return makeres(key)
-  }
-}
-
-function makeres (key) {
-  return once(function RES () {
-    var cbs = reqs[key]
-    var len = cbs.length
-    var args = slice(arguments)
-
-    // XXX It's somewhat ambiguous whether a new callback added in this
-    // pass should be queued for later execution if something in the
-    // list of callbacks throws, or if it should just be discarded.
-    // However, it's such an edge case that it hardly matters, and either
-    // choice is likely as surprising as the other.
-    // As it happens, we do go ahead and schedule it for later execution.
-    try {
-      for (var i = 0; i < len; i++) {
-        cbs[i].apply(null, args)
-      }
-    } finally {
-      if (cbs.length > len) {
-        // added more in the interim.
-        // de-zalgo, just in case, but don't call again.
-        cbs.splice(0, len)
-        process.nextTick(function () {
-          RES.apply(null, args)
-        })
-      } else {
-        delete reqs[key]
-      }
-    }
-  })
-}
-
-function slice (args) {
-  var length = args.length
-  var array = []
-
-  for (var i = 0; i < length; i++) array[i] = args[i]
-  return array
-}
-
-
-/***/ }),
-
 /***/ 4124:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
@@ -60062,6 +55687,122 @@ var toString = {}.toString;
 module.exports = Array.isArray || function (arr) {
   return toString.call(arr) == '[object Array]';
 };
+
+
+/***/ }),
+
+/***/ 6160:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+let _fs
+try {
+  _fs = __nccwpck_require__(7758)
+} catch (_) {
+  _fs = __nccwpck_require__(7147)
+}
+const universalify = __nccwpck_require__(9046)
+const { stringify, stripBom } = __nccwpck_require__(5902)
+
+async function _readFile (file, options = {}) {
+  if (typeof options === 'string') {
+    options = { encoding: options }
+  }
+
+  const fs = options.fs || _fs
+
+  const shouldThrow = 'throws' in options ? options.throws : true
+
+  let data = await universalify.fromCallback(fs.readFile)(file, options)
+
+  data = stripBom(data)
+
+  let obj
+  try {
+    obj = JSON.parse(data, options ? options.reviver : null)
+  } catch (err) {
+    if (shouldThrow) {
+      err.message = `${file}: ${err.message}`
+      throw err
+    } else {
+      return null
+    }
+  }
+
+  return obj
+}
+
+const readFile = universalify.fromPromise(_readFile)
+
+function readFileSync (file, options = {}) {
+  if (typeof options === 'string') {
+    options = { encoding: options }
+  }
+
+  const fs = options.fs || _fs
+
+  const shouldThrow = 'throws' in options ? options.throws : true
+
+  try {
+    let content = fs.readFileSync(file, options)
+    content = stripBom(content)
+    return JSON.parse(content, options.reviver)
+  } catch (err) {
+    if (shouldThrow) {
+      err.message = `${file}: ${err.message}`
+      throw err
+    } else {
+      return null
+    }
+  }
+}
+
+async function _writeFile (file, obj, options = {}) {
+  const fs = options.fs || _fs
+
+  const str = stringify(obj, options)
+
+  await universalify.fromCallback(fs.writeFile)(file, str, options)
+}
+
+const writeFile = universalify.fromPromise(_writeFile)
+
+function writeFileSync (file, obj, options = {}) {
+  const fs = options.fs || _fs
+
+  const str = stringify(obj, options)
+  // not sure if fs.writeFileSync returns anything, but just in case
+  return fs.writeFileSync(file, str, options)
+}
+
+const jsonfile = {
+  readFile,
+  readFileSync,
+  writeFile,
+  writeFileSync
+}
+
+module.exports = jsonfile
+
+
+/***/ }),
+
+/***/ 5902:
+/***/ ((module) => {
+
+function stringify (obj, { EOL = '\n', finalEOL = true, replacer = null, spaces } = {}) {
+  const EOF = finalEOL ? EOL : ''
+  const str = JSON.stringify(obj, replacer, spaces)
+
+  return str.replace(/\n/g, EOL) + EOF
+}
+
+function stripBom (content) {
+  // we do this because JSON.parse would convert it to a utf8 string if encoding wasn't specified
+  if (Buffer.isBuffer(content)) content = content.toString('utf8')
+  return content.replace(/^\uFEFF/, '')
+}
+
+module.exports = { stringify, stripBom }
 
 
 /***/ }),
@@ -65191,79 +60932,277 @@ module.exports.implForWrapper = function (wrapper) {
 
 /***/ }),
 
-/***/ 1223:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-var wrappy = __nccwpck_require__(2940)
-module.exports = wrappy(once)
-module.exports.strict = wrappy(onceStrict)
-
-once.proto = once(function () {
-  Object.defineProperty(Function.prototype, 'once', {
-    value: function () {
-      return once(this)
-    },
-    configurable: true
-  })
-
-  Object.defineProperty(Function.prototype, 'onceStrict', {
-    value: function () {
-      return onceStrict(this)
-    },
-    configurable: true
-  })
-})
-
-function once (fn) {
-  var f = function () {
-    if (f.called) return f.value
-    f.called = true
-    return f.value = fn.apply(this, arguments)
-  }
-  f.called = false
-  return f
-}
-
-function onceStrict (fn) {
-  var f = function () {
-    if (f.called)
-      throw new Error(f.onceError)
-    f.called = true
-    return f.value = fn.apply(this, arguments)
-  }
-  var name = fn.name || 'Function wrapped with `once`'
-  f.onceError = name + " shouldn't be called more than once"
-  f.called = false
-  return f
-}
-
-
-/***/ }),
-
-/***/ 8714:
+/***/ 6554:
 /***/ ((module) => {
 
-"use strict";
+//     Int64.js
+//
+//     Copyright (c) 2012 Robert Kieffer
+//     MIT License - http://opensource.org/licenses/mit-license.php
 
+/**
+ * Support for handling 64-bit int numbers in Javascript (node.js)
+ *
+ * JS Numbers are IEEE-754 binary double-precision floats, which limits the
+ * range of values that can be represented with integer precision to:
+ *
+ * 2^^53 <= N <= 2^53
+ *
+ * Int64 objects wrap a node Buffer that holds the 8-bytes of int64 data.  These
+ * objects operate directly on the buffer which means that if they are created
+ * using an existing buffer then setting the value will modify the Buffer, and
+ * vice-versa.
+ *
+ * Internal Representation
+ *
+ * The internal buffer format is Big Endian.  I.e. the most-significant byte is
+ * at buffer[0], the least-significant at buffer[7].  For the purposes of
+ * converting to/from JS native numbers, the value is assumed to be a signed
+ * integer stored in 2's complement form.
+ *
+ * For details about IEEE-754 see:
+ * http://en.wikipedia.org/wiki/Double_precision_floating-point_format
+ */
 
-function posix(path) {
-	return path.charAt(0) === '/';
+// Useful masks and values for bit twiddling
+var MASK31 =  0x7fffffff, VAL31 = 0x80000000;
+var MASK32 =  0xffffffff, VAL32 = 0x100000000;
+
+// Map for converting hex octets to strings
+var _HEX = [];
+for (var i = 0; i < 256; i++) {
+  _HEX[i] = (i > 0xF ? '' : '0') + i.toString(16);
 }
 
-function win32(path) {
-	// https://github.com/nodejs/node/blob/b3fcc245fb25539909ef1d5eaa01dbf92e168633/lib/path.js#L56
-	var splitDeviceRe = /^([a-zA-Z]:|[\\\/]{2}[^\\\/]+[\\\/]+[^\\\/]+)?([\\\/])?([\s\S]*?)$/;
-	var result = splitDeviceRe.exec(path);
-	var device = result[1] || '';
-	var isUnc = Boolean(device && device.charAt(1) !== ':');
+//
+// Int64
+//
 
-	// UNC paths are always absolute
-	return Boolean(result[2] || isUnc);
-}
+/**
+ * Constructor accepts any of the following argument types:
+ *
+ * new Int64(buffer[, offset=0]) - Existing Buffer with byte offset
+ * new Int64(Uint8Array[, offset=0]) - Existing Uint8Array with a byte offset
+ * new Int64(string)             - Hex string (throws if n is outside int64 range)
+ * new Int64(number)             - Number (throws if n is outside int64 range)
+ * new Int64(hi, lo)             - Raw bits as two 32-bit values
+ */
+var Int64 = module.exports = function(a1, a2) {
+  if (a1 instanceof Buffer) {
+    this.buffer = a1;
+    this.offset = a2 || 0;
+  } else if (Object.prototype.toString.call(a1) == '[object Uint8Array]') {
+    // Under Browserify, Buffers can extend Uint8Arrays rather than an
+    // instance of Buffer. We could assume the passed in Uint8Array is actually
+    // a buffer but that won't handle the case where a raw Uint8Array is passed
+    // in. We construct a new Buffer just in case.
+    this.buffer = new Buffer(a1);
+    this.offset = a2 || 0;
+  } else {
+    this.buffer = this.buffer || new Buffer(8);
+    this.offset = 0;
+    this.setValue.apply(this, arguments);
+  }
+};
 
-module.exports = process.platform === 'win32' ? win32 : posix;
-module.exports.posix = posix;
-module.exports.win32 = win32;
+
+// Max integer value that JS can accurately represent
+Int64.MAX_INT = Math.pow(2, 53);
+
+// Min integer value that JS can accurately represent
+Int64.MIN_INT = -Math.pow(2, 53);
+
+Int64.prototype = {
+
+  constructor: Int64,
+
+  /**
+   * Do in-place 2's compliment.  See
+   * http://en.wikipedia.org/wiki/Two's_complement
+   */
+  _2scomp: function() {
+    var b = this.buffer, o = this.offset, carry = 1;
+    for (var i = o + 7; i >= o; i--) {
+      var v = (b[i] ^ 0xff) + carry;
+      b[i] = v & 0xff;
+      carry = v >> 8;
+    }
+  },
+
+  /**
+   * Set the value. Takes any of the following arguments:
+   *
+   * setValue(string) - A hexidecimal string
+   * setValue(number) - Number (throws if n is outside int64 range)
+   * setValue(hi, lo) - Raw bits as two 32-bit values
+   */
+  setValue: function(hi, lo) {
+    var negate = false;
+    if (arguments.length == 1) {
+      if (typeof(hi) == 'number') {
+        // Simplify bitfield retrieval by using abs() value.  We restore sign
+        // later
+        negate = hi < 0;
+        hi = Math.abs(hi);
+        lo = hi % VAL32;
+        hi = hi / VAL32;
+        if (hi > VAL32) throw new RangeError(hi  + ' is outside Int64 range');
+        hi = hi | 0;
+      } else if (typeof(hi) == 'string') {
+        hi = (hi + '').replace(/^0x/, '');
+        lo = hi.substr(-8);
+        hi = hi.length > 8 ? hi.substr(0, hi.length - 8) : '';
+        hi = parseInt(hi, 16);
+        lo = parseInt(lo, 16);
+      } else {
+        throw new Error(hi + ' must be a Number or String');
+      }
+    }
+
+    // Technically we should throw if hi or lo is outside int32 range here, but
+    // it's not worth the effort. Anything past the 32'nd bit is ignored.
+
+    // Copy bytes to buffer
+    var b = this.buffer, o = this.offset;
+    for (var i = 7; i >= 0; i--) {
+      b[o+i] = lo & 0xff;
+      lo = i == 4 ? hi : lo >>> 8;
+    }
+
+    // Restore sign of passed argument
+    if (negate) this._2scomp();
+  },
+
+  /**
+   * Convert to a native JS number.
+   *
+   * WARNING: Do not expect this value to be accurate to integer precision for
+   * large (positive or negative) numbers!
+   *
+   * @param allowImprecise If true, no check is performed to verify the
+   * returned value is accurate to integer precision.  If false, imprecise
+   * numbers (very large positive or negative numbers) will be forced to +/-
+   * Infinity.
+   */
+  toNumber: function(allowImprecise) {
+    var b = this.buffer, o = this.offset;
+
+    // Running sum of octets, doing a 2's complement
+    var negate = b[o] & 0x80, x = 0, carry = 1;
+    for (var i = 7, m = 1; i >= 0; i--, m *= 256) {
+      var v = b[o+i];
+
+      // 2's complement for negative numbers
+      if (negate) {
+        v = (v ^ 0xff) + carry;
+        carry = v >> 8;
+        v = v & 0xff;
+      }
+
+      x += v * m;
+    }
+
+    // Return Infinity if we've lost integer precision
+    if (!allowImprecise && x >= Int64.MAX_INT) {
+      return negate ? -Infinity : Infinity;
+    }
+
+    return negate ? -x : x;
+  },
+
+  /**
+   * Convert to a JS Number. Returns +/-Infinity for values that can't be
+   * represented to integer precision.
+   */
+  valueOf: function() {
+    return this.toNumber(false);
+  },
+
+  /**
+   * Return string value
+   *
+   * @param radix Just like Number#toString()'s radix
+   */
+  toString: function(radix) {
+    return this.valueOf().toString(radix || 10);
+  },
+
+  /**
+   * Return a string showing the buffer octets, with MSB on the left.
+   *
+   * @param sep separator string. default is '' (empty string)
+   */
+  toOctetString: function(sep) {
+    var out = new Array(8);
+    var b = this.buffer, o = this.offset;
+    for (var i = 0; i < 8; i++) {
+      out[i] = _HEX[b[o+i]];
+    }
+    return out.join(sep || '');
+  },
+
+  /**
+   * Returns the int64's 8 bytes in a buffer.
+   *
+   * @param {bool} [rawBuffer=false]  If no offset and this is true, return the internal buffer.  Should only be used if
+   *                                  you're discarding the Int64 afterwards, as it breaks encapsulation.
+   */
+  toBuffer: function(rawBuffer) {
+    if (rawBuffer && this.offset === 0) return this.buffer;
+
+    var out = new Buffer(8);
+    this.buffer.copy(out, 0, this.offset, this.offset + 8);
+    return out;
+  },
+
+  /**
+   * Copy 8 bytes of int64 into target buffer at target offset.
+   *
+   * @param {Buffer} targetBuffer       Buffer to copy into.
+   * @param {number} [targetOffset=0]   Offset into target buffer.
+   */
+  copy: function(targetBuffer, targetOffset) {
+    this.buffer.copy(targetBuffer, targetOffset || 0, this.offset, this.offset + 8);
+  },
+
+  /**
+   * Returns a number indicating whether this comes before or after or is the
+   * same as the other in sort order.
+   *
+   * @param {Int64} other  Other Int64 to compare.
+   */
+  compare: function(other) {
+
+    // If sign bits differ ...
+    if ((this.buffer[this.offset] & 0x80) != (other.buffer[other.offset] & 0x80)) {
+      return other.buffer[other.offset] - this.buffer[this.offset];
+    }
+
+    // otherwise, compare bytes lexicographically
+    for (var i = 0; i < 8; i++) {
+      if (this.buffer[this.offset+i] !== other.buffer[other.offset+i]) {
+        return this.buffer[this.offset+i] - other.buffer[other.offset+i];
+      }
+    }
+    return 0;
+  },
+
+  /**
+   * Returns a boolean indicating if this integer is equal to other.
+   *
+   * @param {Int64} other  Other Int64 to compare.
+   */
+  equals: function(other) {
+    return this.compare(other) === 0;
+  },
+
+  /**
+   * Pretty output in console.log
+   */
+  inspect: function() {
+    return '[Int64 value:' + this + ' octets:' + this.toOctetString(' ') + ']';
+  }
+};
 
 
 /***/ }),
@@ -71529,26 +67468,57 @@ exports.debug = debug; // for test
 
 /***/ }),
 
+/***/ 9046:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+
+exports.fromCallback = function (fn) {
+  return Object.defineProperty(function (...args) {
+    if (typeof args[args.length - 1] === 'function') fn.apply(this, args)
+    else {
+      return new Promise((resolve, reject) => {
+        args.push((err, res) => (err != null) ? reject(err) : resolve(res))
+        fn.apply(this, args)
+      })
+    }
+  }, 'name', { value: fn.name })
+}
+
+exports.fromPromise = function (fn) {
+  return Object.defineProperty(function (...args) {
+    const cb = args[args.length - 1]
+    if (typeof cb !== 'function') return fn.apply(this, args)
+    else {
+      args.pop()
+      fn.apply(this, args).then(r => cb(null, r), cb)
+    }
+  }, 'name', { value: fn.name })
+}
+
+
+/***/ }),
+
 /***/ 3319:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var Promise = __nccwpck_require__(8710);
-var Stream = __nccwpck_require__(2781);
+const Stream = __nccwpck_require__(2781);
 
 module.exports = function(entry) {
-  return new Promise(function(resolve,reject) {
-    var chunks = [];
-    var bufferStream = Stream.Transform()
-      .on('finish',function() {
+  return new Promise(function(resolve, reject) {
+    const chunks = [];
+    const bufferStream = Stream.Transform()
+      .on('finish', function() {
         resolve(Buffer.concat(chunks));
       })
-      .on('error',reject);
-        
-    bufferStream._transform = function(d,e,cb) {
+      .on('error', reject);
+
+    bufferStream._transform = function(d, e, cb) {
       chunks.push(d);
       cb();
     };
-    entry.on('error',reject)
+    entry.on('error', reject)
       .pipe(bufferStream);
   });
 };
@@ -71559,72 +67529,98 @@ module.exports = function(entry) {
 /***/ 4589:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var bigInt = __nccwpck_require__(1575);
-var Stream = __nccwpck_require__(2781);
+const Int64 = __nccwpck_require__(6554);
+let Stream = __nccwpck_require__(2781);
 
-var table;
+// Backwards compatibility for node versions < 8
+
+if (!Stream.Writable || !Stream.Writable.prototype.destroy)
+  Stream = __nccwpck_require__(1642);
+
+let table;
 
 function generateTable() {
-  var poly = 0xEDB88320,c,n,k;
+  const poly = 0xEDB88320;
+  let c, n, k;
   table = [];
   for (n = 0; n < 256; n++) {
     c = n;
-    for (k = 0; k < 8; k++)
-      c = (c & 1) ? poly ^ (c >>> 1) :  c = c >>> 1;
+    for (k = 0; k < 8; k++) c = c & 1 ? poly ^ (c >>> 1) : (c = c >>> 1);
     table[n] = c >>> 0;
   }
 }
 
-function crc(ch,crc) {
-  if (!table)
-    generateTable();
+function crc(ch, crc) {
+  if (!table) generateTable();
 
-  if (ch.charCodeAt)
-    ch = ch.charCodeAt(0);        
+  if (ch.charCodeAt) ch = ch.charCodeAt(0);
 
-  return (bigInt(crc).shiftRight(8).and(0xffffff)).xor(table[bigInt(crc).xor(ch).and(0xff)]).value;
+  const l = (crc.readUInt32BE() >> 8) & 0xffffff;
+  const r = table[(crc.readUInt32BE() ^ (ch >>> 0)) & 0xff];
+
+  return (l ^ r) >>> 0;
+}
+
+function multiply(a, b) {
+  const ah = (a >> 16) & 0xffff;
+  const al = a & 0xffff;
+  const bh = (b >> 16) & 0xffff;
+  const bl = b & 0xffff;
+  const high = (ah * bl + al * bh) & 0xffff;
+
+  return ((high << 16) >>> 0) + al * bl;
 }
 
 function Decrypt() {
-  if (!(this instanceof Decrypt))
-    return new Decrypt();
+  if (!(this instanceof Decrypt)) return new Decrypt();
 
-  this.key0 = 305419896;
-  this.key1 = 591751049;
-  this.key2 = 878082192;
+  this.key0 = Buffer.allocUnsafe(4);
+  this.key1 = Buffer.allocUnsafe(4);
+  this.key2 = Buffer.allocUnsafe(4);
+
+  this.key0.writeUInt32BE(0x12345678, 0);
+  this.key1.writeUInt32BE(0x23456789, 0);
+  this.key2.writeUInt32BE(0x34567890, 0);
 }
 
-Decrypt.prototype.update = function(h) {            
-  this.key0 = crc(h,this.key0);
-  this.key1 = bigInt(this.key0).and(255).and(4294967295).add(this.key1)
-  this.key1 = bigInt(this.key1).multiply(134775813).add(1).and(4294967295).value;
-  this.key2 = crc(bigInt(this.key1).shiftRight(24).and(255), this.key2);
-}
+Decrypt.prototype.update = function (h) {
+  this.key0.writeUInt32BE(crc(h, this.key0));
+  this.key1.writeUInt32BE(
+    ((this.key0.readUInt32BE() & 0xff & 0xFFFFFFFF) +
+      this.key1.readUInt32BE()) >>> 0
+  );
+  const x = new Int64(
+    (multiply(this.key1.readUInt32BE(), 134775813) + 1) & 0xFFFFFFFF
+  );
+  const b = Buffer.alloc(8);
+  x.copy(b, 0);
+  b.copy(this.key1, 0, 4, 8);
+  this.key2.writeUInt32BE(
+    crc(((this.key1.readUInt32BE() >> 24) & 0xff) >>> 0, this.key2)
+  );
+};
 
-
-Decrypt.prototype.decryptByte = function(c) {
-  var k = bigInt(this.key2).or(2);
-  c = c ^ bigInt(k).multiply(bigInt(k^1)).shiftRight(8).and(255);
+Decrypt.prototype.decryptByte = function (c) {
+  const k = (this.key2.readUInt32BE() | 2) >>> 0;
+  c = c ^ ((multiply(k, (k ^ 1 >>> 0)) >> 8) & 0xff);
   this.update(c);
+
   return c;
 };
 
- Decrypt.prototype.stream = function() {
-  var stream = Stream.Transform(),
-      self = this;
-
-  stream._transform = function(d,e,cb) {
-    for (var i = 0; i<d.length;i++) {
+Decrypt.prototype.stream = function () {
+  const stream = Stream.Transform(),
+    self = this;
+  stream._transform = function (d, e, cb) {
+    for (let i = 0; i < d.length; i++) {
       d[i] = self.decryptByte(d[i]);
     }
     this.push(d);
     cb();
   };
+
   return stream;
 };
-
-
-
 
 module.exports = Decrypt;
 
@@ -71633,8 +67629,8 @@ module.exports = Decrypt;
 /***/ 360:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var Stream = __nccwpck_require__(2781);
-var util = __nccwpck_require__(3837);
+const Stream = __nccwpck_require__(2781);
+const util = __nccwpck_require__(3837);
 function NoopStream() {
   if (!(this instanceof NoopStream)) {
     return new NoopStream();
@@ -71642,10 +67638,10 @@ function NoopStream() {
   Stream.Transform.call(this);
 }
 
-util.inherits(NoopStream,Stream.Transform);
+util.inherits(NoopStream, Stream.Transform);
 
-NoopStream.prototype._transform = function(d,e,cb) { cb() ;};
-  
+NoopStream.prototype._transform = function(d, e, cb) { cb() ;};
+
 module.exports = NoopStream;
 
 /***/ }),
@@ -71653,26 +67649,26 @@ module.exports = NoopStream;
 /***/ 7031:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var PullStream = __nccwpck_require__(3804);
-var unzip = __nccwpck_require__(2428);
-var Promise = __nccwpck_require__(8710);
-var BufferStream = __nccwpck_require__(3319);
-var parseExtraField = __nccwpck_require__(5120);
-var path = __nccwpck_require__(1017);
-var Writer = (__nccwpck_require__(7158).Writer);
-var parseDateTime = __nccwpck_require__(5734);
-var parseBuffer = __nccwpck_require__(1406);
+const PullStream = __nccwpck_require__(3804);
+const unzip = __nccwpck_require__(2428);
+const BufferStream = __nccwpck_require__(3319);
+const parseExtraField = __nccwpck_require__(5120);
+const path = __nccwpck_require__(1017);
+const fs = __nccwpck_require__(5630);
+const parseDateTime = __nccwpck_require__(5734);
+const parseBuffer = __nccwpck_require__(1406);
+const Bluebird = __nccwpck_require__(8710);
 
-var signature = Buffer.alloc(4);
-signature.writeUInt32LE(0x06054b50,0);
+const signature = Buffer.alloc(4);
+signature.writeUInt32LE(0x06054b50, 0);
 
 function getCrxHeader(source) {
-  var sourceStream = source.stream(0).pipe(PullStream());
+  const sourceStream = source.stream(0).pipe(PullStream());
 
   return sourceStream.pull(4).then(function(data) {
-    var signature = data.readUInt32LE(0);
+    const signature = data.readUInt32LE(0);
     if (signature === 0x34327243) {
-      var crxHeader;
+      let crxHeader;
       return sourceStream.pull(12).then(function(data) {
         crxHeader = parseBuffer.parse(data, [
           ['version', 4],
@@ -71682,7 +67678,7 @@ function getCrxHeader(source) {
       }).then(function() {
         return sourceStream.pull(crxHeader.pubKeyLength +crxHeader.signatureLength);
       }).then(function(data) {
-        crxHeader.publicKey = data.slice(0,crxHeader.pubKeyLength);
+        crxHeader.publicKey = data.slice(0, crxHeader.pubKeyLength);
         crxHeader.signature = data.slice(crxHeader.pubKeyLength);
         crxHeader.size = 16 + crxHeader.pubKeyLength +crxHeader.signatureLength;
         return crxHeader;
@@ -71693,7 +67689,7 @@ function getCrxHeader(source) {
 
 // Zip64 File Format Notes: https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
 function getZip64CentralDirectory(source, zip64CDL) {
-  var d64loc = parseBuffer.parse(zip64CDL, [
+  const d64loc = parseBuffer.parse(zip64CDL, [
     ['signature', 4],
     ['diskNumber', 4],
     ['offsetToStartOfCentralDirectory', 8],
@@ -71704,15 +67700,15 @@ function getZip64CentralDirectory(source, zip64CDL) {
     throw new Error('invalid zip64 end of central dir locator signature (0x07064b50): 0x' + d64loc.signature.toString(16));
   }
 
-  var dir64 = PullStream();
+  const dir64 = PullStream();
   source.stream(d64loc.offsetToStartOfCentralDirectory).pipe(dir64);
 
-  return dir64.pull(56)
+  return dir64.pull(56);
 }
 
 // Zip64 File Format Notes: https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
 function parseZip64DirRecord (dir64record) {
-  var vars = parseBuffer.parse(dir64record, [
+  const vars = parseBuffer.parse(dir64record, [
     ['signature', 4],
     ['sizeOfCentralDirectory', 8],
     ['version', 2],
@@ -71729,17 +67725,17 @@ function parseZip64DirRecord (dir64record) {
     throw new Error('invalid zip64 end of central dir locator signature (0x06064b50): 0x0' + vars.signature.toString(16));
   }
 
-  return vars
+  return vars;
 }
 
 module.exports = function centralDirectory(source, options) {
-  var endDir = PullStream(),
-      records = PullStream(),
-      tailSize = (options && options.tailSize) || 80,
-      sourceSize,
-      crxHeader,
-      startOffset,
-      vars;
+  const endDir = PullStream();
+  const records = PullStream();
+  const tailSize = (options && options.tailSize) || 80;
+  let sourceSize,
+    crxHeader,
+    startOffset,
+    vars;
 
   if (options && options.crx)
     crxHeader = getCrxHeader(source);
@@ -71748,17 +67744,17 @@ module.exports = function centralDirectory(source, options) {
     .then(function(size) {
       sourceSize = size;
 
-      source.stream(Math.max(0,size-tailSize))
-        .on('error', function (error) { endDir.emit('error', error) })
+      source.stream(Math.max(0, size-tailSize))
+        .on('error', function (error) { endDir.emit('error', error); })
         .pipe(endDir);
 
       return endDir.pull(signature);
     })
     .then(function() {
-      return Promise.props({directory: endDir.pull(22), crxHeader: crxHeader});
+      return Bluebird.props({directory: endDir.pull(22), crxHeader: crxHeader});
     })
     .then(function(d) {
-      var data = d.directory;
+      const data = d.directory;
       startOffset = d.crxHeader && d.crxHeader.size || 0;
 
       vars = parseBuffer.parse(data, [
@@ -71780,17 +67776,17 @@ module.exports = function centralDirectory(source, options) {
         vars.offsetToStartOfCentralDirectory == 0xffffffff) {
 
         // Offset to zip64 CDL is 20 bytes before normal CDR
-        const zip64CDLSize = 20
-        const zip64CDLOffset = sourceSize - (tailSize - endDir.match + zip64CDLSize)
+        const zip64CDLSize = 20;
+        const zip64CDLOffset = sourceSize - (tailSize - endDir.match + zip64CDLSize);
         const zip64CDLStream = PullStream();
 
         source.stream(zip64CDLOffset).pipe(zip64CDLStream);
 
         return zip64CDLStream.pull(zip64CDLSize)
-          .then(function (d) { return getZip64CentralDirectory(source, d) })
+          .then(function (d) { return getZip64CentralDirectory(source, d); })
           .then(function (dir64record) {
-            vars = parseZip64DirRecord(dir64record)
-          })
+            vars = parseZip64DirRecord(dir64record);
+          });
       } else {
         vars.offsetToStartOfCentralDirectory += startOffset;
       }
@@ -71808,32 +67804,38 @@ module.exports = function centralDirectory(source, options) {
         // make sure path is normalized before using it
         opts.path = path.resolve(path.normalize(opts.path));
         return vars.files.then(function(files) {
-          return Promise.map(files, function(entry) {
-            if (entry.type == 'Directory') return;
-
+          return Bluebird.map(files, async function(entry) {
             // to avoid zip slip (writing outside of the destination), we resolve
             // the target path, and make sure it's nested in the intended
             // destination, or not extract it otherwise.
-            var extractPath = path.join(opts.path, entry.path);
+            const extractPath = path.join(opts.path, entry.path);
             if (extractPath.indexOf(opts.path) != 0) {
               return;
             }
-            var writer = opts.getWriter ? opts.getWriter({path: extractPath}) :  Writer({ path: extractPath });
+
+            if (entry.type == 'Directory') {
+              await fs.ensureDir(extractPath);
+              return;
+            }
+
+            await fs.ensureDir(path.dirname(extractPath));
+
+            const writer = opts.getWriter ? opts.getWriter({path: extractPath}) : fs.createWriteStream(extractPath);
 
             return new Promise(function(resolve, reject) {
               entry.stream(opts.password)
-                .on('error',reject)
+                .on('error', reject)
                 .pipe(writer)
-                .on('close',resolve)
-                .on('error',reject);
+                .on('close', resolve)
+                .on('error', reject);
             });
           }, { concurrency: opts.concurrency > 1 ? opts.concurrency : 1 });
         });
       };
 
-      vars.files = Promise.mapSeries(Array(vars.numberOfRecords),function() {
-        return records.pull(46).then(function(data) {    
-          var vars = vars = parseBuffer.parse(data, [
+      vars.files = Bluebird.mapSeries(Array(vars.numberOfRecords), function() {
+        return records.pull(46).then(function(data) {
+          const vars = parseBuffer.parse(data, [
             ['signature', 4],
             ['versionMadeBy', 2],
             ['versionsNeededToExtract', 2],
@@ -71853,42 +67855,42 @@ module.exports = function centralDirectory(source, options) {
             ['offsetToLocalFileHeader', 4],
           ]);
 
-        vars.offsetToLocalFileHeader += startOffset;
-        vars.lastModifiedDateTime = parseDateTime(vars.lastModifiedDate, vars.lastModifiedTime);
+          vars.offsetToLocalFileHeader += startOffset;
+          vars.lastModifiedDateTime = parseDateTime(vars.lastModifiedDate, vars.lastModifiedTime);
 
-        return records.pull(vars.fileNameLength).then(function(fileNameBuffer) {
-          vars.pathBuffer = fileNameBuffer;
-          vars.path = fileNameBuffer.toString('utf8');
-          vars.isUnicode = (vars.flags & 0x800) != 0;
-          return records.pull(vars.extraFieldLength);
-        })
-        .then(function(extraField) {
-          vars.extra = parseExtraField(extraField, vars);
-          return records.pull(vars.fileCommentLength);
-        })
-        .then(function(comment) {
-          vars.comment = comment;
-          vars.type = (vars.uncompressedSize === 0 && /[\/\\]$/.test(vars.path)) ? 'Directory' : 'File';
-          var padding = options && options.padding || 1000;
-          vars.stream = function(_password) {
-            var totalSize = 30
+          return records.pull(vars.fileNameLength).then(function(fileNameBuffer) {
+            vars.pathBuffer = fileNameBuffer;
+            vars.path = fileNameBuffer.toString('utf8');
+            vars.isUnicode = (vars.flags & 0x800) != 0;
+            return records.pull(vars.extraFieldLength);
+          })
+            .then(function(extraField) {
+              vars.extra = parseExtraField(extraField, vars);
+              return records.pull(vars.fileCommentLength);
+            })
+            .then(function(comment) {
+              vars.comment = comment;
+              vars.type = (vars.uncompressedSize === 0 && /[/\\]$/.test(vars.path)) ? 'Directory' : 'File';
+              const padding = options && options.padding || 1000;
+              vars.stream = function(_password) {
+                const totalSize = 30
               + padding // add an extra buffer
-              + (vars.extraFieldLength || 0) 
+              + (vars.extraFieldLength || 0)
               + (vars.fileNameLength || 0)
               + vars.compressedSize;
 
-            return unzip(source, vars.offsetToLocalFileHeader,_password, vars, totalSize);
-          };
-          vars.buffer = function(_password) {
-            return BufferStream(vars.stream(_password));
-          };
-          return vars;
+                return unzip(source, vars.offsetToLocalFileHeader, _password, vars, totalSize);
+              };
+              vars.buffer = function(_password) {
+                return BufferStream(vars.stream(_password));
+              };
+              return vars;
+            });
         });
       });
-    });
 
-    return Promise.props(vars);
-  });
+      return Bluebird.props(vars);
+    });
 };
 
 
@@ -71897,17 +67899,16 @@ module.exports = function centralDirectory(source, options) {
 /***/ 5405:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var fs = __nccwpck_require__(7758);
-var Promise = __nccwpck_require__(8710);
-var directory = __nccwpck_require__(7031);
-var Stream = __nccwpck_require__(2781);
+const fs = __nccwpck_require__(7758);
+const directory = __nccwpck_require__(7031);
+const Stream = __nccwpck_require__(2781);
 
 module.exports = {
   buffer: function(buffer, options) {
-    var source = {
+    const source = {
       stream: function(offset, length) {
-        var stream = Stream.PassThrough();
-        var end = length ? offset + length : undefined;
+        const stream = Stream.PassThrough();
+        const end = length ? offset + length : undefined;
         stream.end(buffer.slice(offset, end));
         return stream;
       },
@@ -71918,14 +67919,14 @@ module.exports = {
     return directory(source, options);
   },
   file: function(filename, options) {
-    var source = {
-      stream: function(start,length) {
-        var end = length ? start + length : undefined;
-        return fs.createReadStream(filename,{start, end});
+    const source = {
+      stream: function(start, length) {
+        const end = length ? start + length : undefined;
+        return fs.createReadStream(filename, {start, end});
       },
       size: function() {
-        return new Promise(function(resolve,reject) {
-          fs.stat(filename,function(err,d) {
+        return new Promise(function(resolve, reject) {
+          fs.stat(filename, function(err, d) {
             if (err)
               reject(err);
             else
@@ -71944,24 +67945,24 @@ module.exports = {
       throw 'URL missing';
     params.headers = params.headers || {};
 
-    var source = {
-      stream : function(offset,length) {
-        var options = Object.create(params);
-        var end = length ? offset + length : '';
+    const source = {
+      stream : function(offset, length) {
+        const options = Object.create(params);
+        const end = length ? offset + length : '';
         options.headers = Object.create(params.headers);
         options.headers.range = 'bytes='+offset+'-' + end;
         return request(options);
       },
       size: function() {
-        return new Promise(function(resolve,reject) {
-          var req = request(params);
-          req.on('response',function(d) {
+        return new Promise(function(resolve, reject) {
+          const req = request(params);
+          req.on('response', function(d) {
             req.abort();
             if (!d.headers['content-length'])
               reject(new Error('Missing content length header'));
             else
               resolve(d.headers['content-length']);
-          }).on('error',reject);
+          }).on('error', reject);
         });
       }
     };
@@ -71969,11 +67970,11 @@ module.exports = {
     return directory(source, options);
   },
 
-  s3 : function(client,params, options) {
-    var source = {
+  s3 : function(client, params, options) {
+    const source = {
       size: function() {
-        return new Promise(function(resolve,reject) {
-          client.headObject(params, function(err,d) {
+        return new Promise(function(resolve, reject) {
+          client.headObject(params, function(err, d) {
             if (err)
               reject(err);
             else
@@ -71981,11 +67982,11 @@ module.exports = {
           });
         });
       },
-      stream: function(offset,length) {
-        var d = {};
-        for (var key in params)
+      stream: function(offset, length) {
+        const d = {};
+        for (const key in params)
           d[key] = params[key];
-        var end = length ? offset + length : '';
+        const end = length ? offset + length : '';
         d.Range = 'bytes='+offset+'-' + end;
         return client.getObject(d).createReadStream();
       }
@@ -72005,27 +68006,26 @@ module.exports = {
 /***/ 2428:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var Promise = __nccwpck_require__(8710);
-var Decrypt = __nccwpck_require__(4589);
-var PullStream = __nccwpck_require__(3804);
-var Stream = __nccwpck_require__(2781);
-var zlib = __nccwpck_require__(9796);
-var parseExtraField = __nccwpck_require__(5120);
-var parseDateTime = __nccwpck_require__(5734);
-var parseBuffer = __nccwpck_require__(1406);
+const Decrypt = __nccwpck_require__(4589);
+const PullStream = __nccwpck_require__(3804);
+const Stream = __nccwpck_require__(2781);
+const zlib = __nccwpck_require__(9796);
+const parseExtraField = __nccwpck_require__(5120);
+const parseDateTime = __nccwpck_require__(5734);
+const parseBuffer = __nccwpck_require__(1406);
 
 module.exports = function unzip(source, offset, _password, directoryVars, length) {
-  var file = PullStream(),
-      entry = Stream.PassThrough();
+  const file = PullStream(),
+    entry = Stream.PassThrough();
 
-  var req = source.stream(offset, length);
+  const req = source.stream(offset, length);
   req.pipe(file).on('error', function(e) {
     entry.emit('error', e);
   });
 
   entry.vars = file.pull(30)
     .then(function(data) {
-      var vars = parseBuffer.parse(data, [
+      let vars = parseBuffer.parse(data, [
         ['signature', 4],
         ['versionsNeededToExtract', 2],
         ['flags', 2],
@@ -72047,7 +68047,7 @@ module.exports = function unzip(source, offset, _password, directoryVars, length
           return file.pull(vars.extraFieldLength);
         })
         .then(function(extraField) {
-          var checkEncryption;
+          let checkEncryption;
           vars.extra = parseExtraField(extraField, vars);
           // Ignore logal file header vars if the directory vars are available
           if (directoryVars && directoryVars.compressedSize) vars = directoryVars;
@@ -72057,19 +68057,19 @@ module.exports = function unzip(source, offset, _password, directoryVars, length
               if (!_password)
                 throw new Error('MISSING_PASSWORD');
 
-              var decrypt = Decrypt();
+              const decrypt = Decrypt();
 
               String(_password).split('').forEach(function(d) {
                 decrypt.update(d);
               });
 
-              for (var i=0; i < header.length; i++)
+              for (let i=0; i < header.length; i++)
                 header[i] = decrypt.decryptByte(header[i]);
 
               vars.decrypt = decrypt;
               vars.compressedSize -= 12;
 
-              var check = (vars.flags & 0x8) ? (vars.lastModifiedTime >> 8) & 0xff : (vars.crc32 >> 24) & 0xff;
+              const check = (vars.flags & 0x8) ? (vars.lastModifiedTime >> 8) & 0xff : (vars.crc32 >> 24) & 0xff;
               if (header[11] !== check)
                 throw new Error('BAD_PASSWORD');
 
@@ -72078,50 +68078,50 @@ module.exports = function unzip(source, offset, _password, directoryVars, length
 
           return Promise.resolve(checkEncryption)
             .then(function() {
-              entry.emit('vars',vars);
+              entry.emit('vars', vars);
               return vars;
             });
         });
     });
 
-    entry.vars.then(function(vars) {
-      var fileSizeKnown = !(vars.flags & 0x08) || vars.compressedSize > 0,
-          eof;
+  entry.vars.then(function(vars) {
+    const fileSizeKnown = !(vars.flags & 0x08) || vars.compressedSize > 0;
+    let eof;
 
-      var inflater = vars.compressionMethod ? zlib.createInflateRaw() : Stream.PassThrough();
+    const inflater = vars.compressionMethod ? zlib.createInflateRaw() : Stream.PassThrough();
 
-      if (fileSizeKnown) {
-        entry.size = vars.uncompressedSize;
-        eof = vars.compressedSize;
-      } else {
-        eof = Buffer.alloc(4);
-        eof.writeUInt32LE(0x08074b50, 0);
-      }
+    if (fileSizeKnown) {
+      entry.size = vars.uncompressedSize;
+      eof = vars.compressedSize;
+    } else {
+      eof = Buffer.alloc(4);
+      eof.writeUInt32LE(0x08074b50, 0);
+    }
 
-      var stream = file.stream(eof);
+    let stream = file.stream(eof);
 
-      if (vars.decrypt)
-        stream = stream.pipe(vars.decrypt.stream());
+    if (vars.decrypt)
+      stream = stream.pipe(vars.decrypt.stream());
 
-      stream
-        .pipe(inflater)
-        .on('error',function(err) { entry.emit('error',err);})
-        .pipe(entry)
-        .on('finish', function() {
-          if(req.destroy)
-            req.destroy()
-          else if (req.abort)
-            req.abort();
-          else if (req.close)
-            req.close();
-          else if (req.push)
-            req.push();
-          else
-            console.log('warning - unable to close stream');
-        });
-    })
+    stream
+      .pipe(inflater)
+      .on('error', function(err) { entry.emit('error', err);})
+      .pipe(entry)
+      .on('finish', function() {
+        if(req.destroy)
+          req.destroy();
+        else if (req.abort)
+          req.abort();
+        else if (req.close)
+          req.close();
+        else if (req.push)
+          req.push();
+        else
+          console.log('warning - unable to close stream');
+      });
+  })
     .catch(function(e) {
-      entry.emit('error',e);
+      entry.emit('error', e);
     });
 
   return entry;
@@ -72133,28 +68133,27 @@ module.exports = function unzip(source, offset, _password, directoryVars, length
 /***/ 3804:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var Stream = __nccwpck_require__(2781);
-var Promise = __nccwpck_require__(8710);
-var util = __nccwpck_require__(3837);
-var strFunction = 'function';
+const Stream = __nccwpck_require__(2781);
+const util = __nccwpck_require__(3837);
+const strFunction = 'function';
 
 function PullStream() {
   if (!(this instanceof PullStream))
     return new PullStream();
 
-  Stream.Duplex.call(this,{decodeStrings:false, objectMode:true});
+  Stream.Duplex.call(this, {decodeStrings:false, objectMode:true});
   this.buffer = Buffer.from('');
-  var self = this;
-  self.on('finish',function() {
+  const self = this;
+  self.on('finish', function() {
     self.finished = true;
-    self.emit('chunk',false);
+    self.emit('chunk', false);
   });
 }
 
-util.inherits(PullStream,Stream.Duplex);
+util.inherits(PullStream, Stream.Duplex);
 
-PullStream.prototype._write = function(chunk,e,cb) {
-  this.buffer = Buffer.concat([this.buffer,chunk]);
+PullStream.prototype._write = function(chunk, e, cb) {
+  this.buffer = Buffer.concat([this.buffer, chunk]);
   this.cb = cb;
   this.emit('chunk');
 };
@@ -72162,111 +68161,112 @@ PullStream.prototype._write = function(chunk,e,cb) {
 
 // The `eof` parameter is interpreted as `file_length` if the type is number
 // otherwise (i.e. buffer) it is interpreted as a pattern signaling end of stream
-PullStream.prototype.stream = function(eof,includeEof) {
-  var p = Stream.PassThrough();
-  var done,self= this;
+PullStream.prototype.stream = function(eof, includeEof) {
+  const p = Stream.PassThrough();
+  let done;
+  const self= this;
 
   function cb() {
     if (typeof self.cb === strFunction) {
-      var callback = self.cb;
+      const callback = self.cb;
       self.cb = undefined;
       return callback();
     }
   }
 
   function pull() {
-    var packet;
+    let packet;
     if (self.buffer && self.buffer.length) {
       if (typeof eof === 'number') {
-        packet = self.buffer.slice(0,eof);
+        packet = self.buffer.slice(0, eof);
         self.buffer = self.buffer.slice(eof);
         eof -= packet.length;
         done = done || !eof;
       } else {
-        var match = self.buffer.indexOf(eof);
+        let match = self.buffer.indexOf(eof);
         if (match !== -1) {
           // store signature match byte offset to allow us to reference
           // this for zip64 offset
-          self.match = match
+          self.match = match;
           if (includeEof) match = match + eof.length;
-          packet = self.buffer.slice(0,match);
+          packet = self.buffer.slice(0, match);
           self.buffer = self.buffer.slice(match);
           done = true;
         } else {
-          var len = self.buffer.length - eof.length;
+          const len = self.buffer.length - eof.length;
           if (len <= 0) {
             cb();
           } else {
-            packet = self.buffer.slice(0,len);
+            packet = self.buffer.slice(0, len);
             self.buffer = self.buffer.slice(len);
           }
         }
       }
-      if (packet) p.write(packet,function() {
+      if (packet) p.write(packet, function() {
         if (self.buffer.length === 0 || (eof.length && self.buffer.length <= eof.length)) cb();
       });
     }
-    
+
     if (!done) {
       if (self.finished) {
-        self.removeListener('chunk',pull);
+        self.removeListener('chunk', pull);
         self.emit('error', new Error('FILE_ENDED'));
         return;
       }
-      
+
     } else {
-      self.removeListener('chunk',pull);
+      self.removeListener('chunk', pull);
       p.end();
     }
   }
 
-  self.on('chunk',pull);
+  self.on('chunk', pull);
   pull();
   return p;
 };
 
-PullStream.prototype.pull = function(eof,includeEof) {
+PullStream.prototype.pull = function(eof, includeEof) {
   if (eof === 0) return Promise.resolve('');
 
   // If we already have the required data in buffer
   // we can resolve the request immediately
   if (!isNaN(eof) && this.buffer.length > eof) {
-    var data = this.buffer.slice(0,eof);
+    const data = this.buffer.slice(0, eof);
     this.buffer = this.buffer.slice(eof);
     return Promise.resolve(data);
   }
 
   // Otherwise we stream until we have it
-  var buffer = Buffer.from(''),
-      self = this;
+  let buffer = Buffer.from('');
+  const self = this;
 
-  var concatStream = Stream.Transform();
-  concatStream._transform = function(d,e,cb) {
-    buffer = Buffer.concat([buffer,d]);
+  const concatStream = new Stream.Transform();
+  concatStream._transform = function(d, e, cb) {
+    buffer = Buffer.concat([buffer, d]);
     cb();
   };
-  
-  var rejectHandler;
-  var pullStreamRejectHandler;
-  return new Promise(function(resolve,reject) {
+
+  let rejectHandler;
+  let pullStreamRejectHandler;
+  return new Promise(function(resolve, reject) {
     rejectHandler = reject;
     pullStreamRejectHandler = function(e) {
       self.__emittedError = e;
       reject(e);
-    }
+    };
     if (self.finished)
       return reject(new Error('FILE_ENDED'));
-    self.once('error',pullStreamRejectHandler);  // reject any errors from pullstream itself
-    self.stream(eof,includeEof)
-      .on('error',reject)
+    self.once('error', pullStreamRejectHandler); // reject any errors from pullstream itself
+    self.stream(eof, includeEof)
+      .on('error', reject)
       .pipe(concatStream)
-      .on('finish',function() {resolve(buffer);})
-      .on('error',reject);
+      .on('finish', function() {resolve(buffer);})
+      .on('error', reject);
   })
-  .finally(function() {
-    self.removeListener('error',rejectHandler);
-    self.removeListener('error',pullStreamRejectHandler);
-  });
+    .finally(function() {
+      self.removeListener('error', rejectHandler);
+      self.removeListener('error', pullStreamRejectHandler);
+    });
 };
 
 PullStream.prototype._read = function(){};
@@ -72281,56 +68281,61 @@ module.exports = PullStream;
 
 module.exports = Extract;
 
-var Parse = __nccwpck_require__(4100);
-var Writer = (__nccwpck_require__(7158).Writer);
-var path = __nccwpck_require__(1017);
-var stream = __nccwpck_require__(2781);
-var duplexer2 = __nccwpck_require__(1932);
-var Promise = __nccwpck_require__(8710);
+const Parse = __nccwpck_require__(4100);
+const fs = __nccwpck_require__(5630);
+const path = __nccwpck_require__(1017);
+const stream = __nccwpck_require__(2781);
+const duplexer2 = __nccwpck_require__(1932);
 
 function Extract (opts) {
   // make sure path is normalized before using it
   opts.path = path.resolve(path.normalize(opts.path));
 
-  var parser = new Parse(opts);
+  const parser = new Parse(opts);
 
-  var outStream = new stream.Writable({objectMode: true});
-  outStream._write = function(entry, encoding, cb) {
-
-    if (entry.type == 'Directory') return cb();
+  const outStream = new stream.Writable({objectMode: true});
+  outStream._write = async function(entry, encoding, cb) {
 
     // to avoid zip slip (writing outside of the destination), we resolve
     // the target path, and make sure it's nested in the intended
     // destination, or not extract it otherwise.
-    // NOTE: Need to normalize to forward slashes for UNIX OS's to properly 
+    // NOTE: Need to normalize to forward slashes for UNIX OS's to properly
     // ignore the zip slipped file entirely
-    var extractPath = path.join(opts.path, entry.path.replace(/\\/g, '/'));
+    const extractPath = path.join(opts.path, entry.path.replace(/\\/g, '/'));
     if (extractPath.indexOf(opts.path) != 0) {
       return cb();
     }
 
-    const writer = opts.getWriter ? opts.getWriter({path: extractPath}) :  Writer({ path: extractPath });
+
+    if (entry.type == 'Directory') {
+      await fs.ensureDir(extractPath);
+      return cb();
+    }
+
+    await fs.ensureDir(path.dirname(extractPath));
+
+    const writer = opts.getWriter ? opts.getWriter({path: extractPath}) : fs.createWriteStream(extractPath);
 
     entry.pipe(writer)
       .on('error', cb)
       .on('close', cb);
   };
 
-  var extract = duplexer2(parser,outStream);
+  const extract = duplexer2(parser, outStream);
   parser.once('crx-header', function(crxHeader) {
     extract.crxHeader = crxHeader;
   });
 
   parser
     .pipe(outStream)
-    .on('finish',function() {
+    .on('finish', function() {
       extract.emit('close');
     });
-  
+
   extract.promise = function() {
     return new Promise(function(resolve, reject) {
       extract.on('close', resolve);
-      extract.on('error',reject);
+      extract.on('error', reject);
     });
   };
 
@@ -72343,49 +68348,48 @@ function Extract (opts) {
 /***/ 4100:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var util = __nccwpck_require__(3837);
-var zlib = __nccwpck_require__(9796);
-var Stream = __nccwpck_require__(2781);
-var Promise = __nccwpck_require__(8710);
-var PullStream = __nccwpck_require__(3804);
-var NoopStream = __nccwpck_require__(360);
-var BufferStream = __nccwpck_require__(3319);
-var parseExtraField = __nccwpck_require__(5120);
-var parseDateTime = __nccwpck_require__(5734);
-var pipeline = Stream.pipeline;
-var parseBuffer = __nccwpck_require__(1406);
+const util = __nccwpck_require__(3837);
+const zlib = __nccwpck_require__(9796);
+const Stream = __nccwpck_require__(2781);
+const PullStream = __nccwpck_require__(3804);
+const NoopStream = __nccwpck_require__(360);
+const BufferStream = __nccwpck_require__(3319);
+const parseExtraField = __nccwpck_require__(5120);
+const parseDateTime = __nccwpck_require__(5734);
+const pipeline = Stream.pipeline;
+const parseBuffer = __nccwpck_require__(1406);
 
-var endDirectorySignature = Buffer.alloc(4);
+const endDirectorySignature = Buffer.alloc(4);
 endDirectorySignature.writeUInt32LE(0x06054b50, 0);
 
 function Parse(opts) {
   if (!(this instanceof Parse)) {
     return new Parse(opts);
   }
-  var self = this;
+  const self = this;
   self._opts = opts || { verbose: false };
 
   PullStream.call(self, self._opts);
-  self.on('finish',function() {
+  self.on('finish', function() {
     self.emit('end');
     self.emit('close');
   });
   self._readRecord().catch(function(e) {
     if (!self.__emittedError || self.__emittedError !== e)
-      self.emit('error',e);
+      self.emit('error', e);
   });
 }
 
 util.inherits(Parse, PullStream);
 
 Parse.prototype._readRecord = function () {
-  var self = this;
+  const self = this;
 
   return self.pull(4).then(function(data) {
     if (data.length === 0)
       return;
 
-    var signature = data.readUInt32LE(0);
+    const signature = data.readUInt32LE(0);
 
     if (signature === 0x34327243) {
       return self._readCrxHeader();
@@ -72403,7 +68407,7 @@ Parse.prototype._readRecord = function () {
     else if (self.reachedCD) {
       // _readEndOfCentralDirectoryRecord expects the EOCD
       // signature to be consumed so set includeEof=true
-      var includeEof = true;
+      const includeEof = true;
       return self.pull(endDirectorySignature, includeEof).then(function() {
         return self._readEndOfCentralDirectoryRecord();
       });
@@ -72418,7 +68422,7 @@ Parse.prototype._readRecord = function () {
 };
 
 Parse.prototype._readCrxHeader = function() {
-  var self = this;
+  const self = this;
   return self.pull(12).then(function(data) {
     self.crxHeader = parseBuffer.parse(data, [
       ['version', 4],
@@ -72427,17 +68431,17 @@ Parse.prototype._readCrxHeader = function() {
     ]);
     return self.pull(self.crxHeader.pubKeyLength + self.crxHeader.signatureLength);
   }).then(function(data) {
-    self.crxHeader.publicKey = data.slice(0,self.crxHeader.pubKeyLength);
+    self.crxHeader.publicKey = data.slice(0, self.crxHeader.pubKeyLength);
     self.crxHeader.signature = data.slice(self.crxHeader.pubKeyLength);
-    self.emit('crx-header',self.crxHeader);
+    self.emit('crx-header', self.crxHeader);
     return true;
   });
 };
 
 Parse.prototype._readFile = function () {
-  var self = this;
+  const self = this;
   return self.pull(26).then(function(data) {
-    var vars = parseBuffer.parse(data, [
+    const vars = parseBuffer.parse(data, [
       ['versionsNeededToExtract', 2],
       ['flags', 2],
       ['compressionMethod', 2],
@@ -72455,17 +68459,17 @@ Parse.prototype._readFile = function () {
     if (self.crxHeader) vars.crxHeader = self.crxHeader;
 
     return self.pull(vars.fileNameLength).then(function(fileNameBuffer) {
-      var fileName = fileNameBuffer.toString('utf8');
-      var entry = Stream.PassThrough();
-      var __autodraining = false;
+      const fileName = fileNameBuffer.toString('utf8');
+      const entry = Stream.PassThrough();
+      let __autodraining = false;
 
       entry.autodrain = function() {
         __autodraining = true;
-        var draining = entry.pipe(NoopStream());
+        const draining = entry.pipe(NoopStream());
         draining.promise = function() {
           return new Promise(function(resolve, reject) {
-            draining.on('finish',resolve);
-            draining.on('error',reject);
+            draining.on('finish', resolve);
+            draining.on('error', reject);
           });
         };
         return draining;
@@ -72482,7 +68486,7 @@ Parse.prototype._readFile = function () {
       entry.props.flags = {
         "isUnicode": (vars.flags & 0x800) != 0
       };
-      entry.type = (vars.uncompressedSize === 0 && /[\/\\]$/.test(fileName)) ? 'Directory' : 'File';
+      entry.type = (vars.uncompressedSize === 0 && /[/\\]$/.test(fileName)) ? 'Directory' : 'File';
 
       if (self._opts.verbose) {
         if (entry.type === 'Directory') {
@@ -72497,7 +68501,7 @@ Parse.prototype._readFile = function () {
       }
 
       return self.pull(vars.extraFieldLength).then(function(extraField) {
-        var extra = parseExtraField(extraField, vars);
+        const extra = parseExtraField(extraField, vars);
 
         entry.vars = vars;
         entry.extra = extra;
@@ -72518,11 +68522,11 @@ Parse.prototype._readFile = function () {
             extra: extra
           });
 
-        var fileSizeKnown = !(vars.flags & 0x08) || vars.compressedSize > 0,
-            eof;
+        const fileSizeKnown = !(vars.flags & 0x08) || vars.compressedSize > 0;
+        let eof;
 
-        entry.__autodraining = __autodraining;  // expose __autodraining for test purposes
-        var inflater = (vars.compressionMethod && !__autodraining) ? zlib.createInflateRaw() : Stream.PassThrough();
+        entry.__autodraining = __autodraining; // expose __autodraining for test purposes
+        const inflater = (vars.compressionMethod && !__autodraining) ? zlib.createInflateRaw() : Stream.PassThrough();
 
         if (fileSizeKnown) {
           entry.size = vars.uncompressedSize;
@@ -72544,7 +68548,7 @@ Parse.prototype._readFile = function () {
 
               return fileSizeKnown ? resolve(fileSizeKnown) : self._processDataDescriptor(entry).then(resolve).catch(reject);
             }
-          )
+          );
         });
       });
     });
@@ -72552,9 +68556,9 @@ Parse.prototype._readFile = function () {
 };
 
 Parse.prototype._processDataDescriptor = function (entry) {
-  var self = this;
+  const self = this;
   return self.pull(16).then(function(data) {
-    var vars = parseBuffer.parse(data, [
+    const vars = parseBuffer.parse(data, [
       ['dataDescriptorSignature', 4],
       ['crc32', 4],
       ['compressedSize', 4],
@@ -72567,9 +68571,9 @@ Parse.prototype._processDataDescriptor = function (entry) {
 };
 
 Parse.prototype._readCentralDirectoryFileHeader = function () {
-  var self = this;
+  const self = this;
   return self.pull(42).then(function(data) {
-    var vars = parseBuffer.parse(data, [
+    const vars = parseBuffer.parse(data, [
       ['versionMadeBy', 2],
       ['versionsNeededToExtract', 2],
       ['flags', 2],
@@ -72592,20 +68596,20 @@ Parse.prototype._readCentralDirectoryFileHeader = function () {
       vars.fileName = fileName.toString('utf8');
       return self.pull(vars.extraFieldLength);
     })
-    .then(function(extraField) {
-      return self.pull(vars.fileCommentLength);
-    })
-    .then(function(fileComment) {
-      return true;
-    });
+      .then(function() {
+        return self.pull(vars.fileCommentLength);
+      })
+      .then(function() {
+        return true;
+      });
   });
 };
 
 Parse.prototype._readEndOfCentralDirectoryRecord = function() {
-  var self = this;
+  const self = this;
   return self.pull(18).then(function(data) {
 
-    var vars = parseBuffer.parse(data, [
+    const vars = parseBuffer.parse(data, [
       ['diskNumber', 2],
       ['diskStart', 2],
       ['numberOfRecordsOnDisk', 2],
@@ -72615,8 +68619,7 @@ Parse.prototype._readEndOfCentralDirectoryRecord = function() {
       ['commentLength', 2],
     ]);
 
-    return self.pull(vars.commentLength).then(function(comment) {
-      comment = comment.toString('utf8');
+    return self.pull(vars.commentLength).then(function() {
       self.end();
       self.push(null);
     });
@@ -72625,10 +68628,10 @@ Parse.prototype._readEndOfCentralDirectoryRecord = function() {
 };
 
 Parse.prototype.promise = function() {
-  var self = this;
-  return new Promise(function(resolve,reject) {
-    self.on('finish',resolve);
-    self.on('error',reject);
+  const self = this;
+  return new Promise(function(resolve, reject) {
+    self.on('finish', resolve);
+    self.on('error', reject);
   });
 };
 
@@ -72641,7 +68644,7 @@ module.exports = Parse;
 /***/ ((module) => {
 
 const parseUIntLE = function(buffer, offset, size) {
-  var result;
+  let result;
   switch(size) {
     case 1:
       result = buffer.readUInt8(offset);
@@ -72656,10 +68659,10 @@ const parseUIntLE = function(buffer, offset, size) {
       result = Number(buffer.readBigUInt64LE(offset));
       break;
     default:
-     throw new Error('Unsupported UInt LE size!');
+      throw new Error('Unsupported UInt LE size!');
   }
   return result;
-}
+};
 
 /**
  * Parses sequential unsigned little endian numbers from the head of the passed buffer according to
@@ -72678,8 +68681,8 @@ const parseUIntLE = function(buffer, offset, size) {
  * @returns An object with keys set to their associated extracted values.
  */
 const parse = function(buffer, format) {
-  var result = {}
-  var offset = 0;
+  const result = {};
+  let offset = 0;
   for(const [key, size] of format) {
     if(buffer.length >= offset + size) {
       result[key] = parseUIntLE(buffer, offset, size);
@@ -72690,11 +68693,11 @@ const parse = function(buffer, format) {
     offset += size;
   }
   return result;
-}
+};
 
 module.exports = {
   parse
-}
+};
 
 /***/ }),
 
@@ -72720,13 +68723,13 @@ module.exports = function parseDateTime(date, time) {
 /***/ 5120:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var parseBuffer = __nccwpck_require__(1406);
+const parseBuffer = __nccwpck_require__(1406);
 
 module.exports = function(extraField, vars) {
-  var extra;
+  let extra;
   // Find the ZIP64 header, if present.
   while(!extra && extraField && extraField.length) {
-    var candidateExtra = parseBuffer.parse(extraField, [
+    const candidateExtra = parseBuffer.parse(extraField, [
       ['signature', 2],
       ['partsize', 2],
       ['uncompressedSize', 8],
@@ -72749,7 +68752,7 @@ module.exports = function(extraField, vars) {
   if (vars.compressedSize === 0xffffffff)
     vars.compressedSize = extra.compressedSize;
 
-  if (vars.uncompressedSize  === 0xffffffff)
+  if (vars.uncompressedSize === 0xffffffff)
     vars.uncompressedSize= extra.uncompressedSize;
 
   if (vars.offsetToLocalFileHeader === 0xffffffff)
@@ -72764,52 +68767,52 @@ module.exports = function(extraField, vars) {
 /***/ 6716:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var Stream = __nccwpck_require__(2781);
-var Parse = __nccwpck_require__(4100);
-var duplexer2 = __nccwpck_require__(1932);
-var BufferStream = __nccwpck_require__(3319);
+const Stream = __nccwpck_require__(2781);
+const Parse = __nccwpck_require__(4100);
+const duplexer2 = __nccwpck_require__(1932);
+const BufferStream = __nccwpck_require__(3319);
 
-function parseOne(match,opts) {
-  var inStream = Stream.PassThrough({objectMode:true});
-  var outStream = Stream.PassThrough();
-  var transform = Stream.Transform({objectMode:true});
-  var re = match instanceof RegExp ? match : (match && new RegExp(match));
-  var found;
+function parseOne(match, opts) {
+  const inStream = Stream.PassThrough({objectMode:true});
+  const outStream = Stream.PassThrough();
+  const transform = Stream.Transform({objectMode:true});
+  const re = match instanceof RegExp ? match : (match && new RegExp(match));
+  let found;
 
-  transform._transform = function(entry,e,cb) {
+  transform._transform = function(entry, e, cb) {
     if (found || (re && !re.exec(entry.path))) {
       entry.autodrain();
       return cb();
     } else {
       found = true;
-      out.emit('entry',entry);
-      entry.on('error',function(e) {
-        outStream.emit('error',e);
+      out.emit('entry', entry);
+      entry.on('error', function(e) {
+        outStream.emit('error', e);
       });
       entry.pipe(outStream)
-        .on('error',function(err) {
+        .on('error', function(err) {
           cb(err);
         })
-        .on('finish',function(d) {
-          cb(null,d);
+        .on('finish', function(d) {
+          cb(null, d);
         });
     }
   };
 
   inStream.pipe(Parse(opts))
-    .on('error',function(err) {
-      outStream.emit('error',err);
+    .on('error', function(err) {
+      outStream.emit('error', err);
     })
     .pipe(transform)
-    .on('error',Object)  // Silence error as its already addressed in transform
-    .on('finish',function() {
+    .on('error', Object) // Silence error as its already addressed in transform
+    .on('finish', function() {
       if (!found)
-        outStream.emit('error',new Error('PATTERN_NOT_FOUND'));
+        outStream.emit('error', new Error('PATTERN_NOT_FOUND'));
       else
         outStream.end();
     });
 
-  var out = duplexer2(inStream,outStream);
+  const out = duplexer2(inStream, outStream);
   out.buffer = function() {
     return BufferStream(outStream);
   };
@@ -73058,46 +69061,6 @@ function v4(options, buf, offset) {
 }
 
 module.exports = v4;
-
-
-/***/ }),
-
-/***/ 2940:
-/***/ ((module) => {
-
-// Returns a wrapper function that returns a wrapped callback
-// The wrapper function should do some stuff, and return a
-// presumably different callback function.
-// This makes sure that own properties are retained, so that
-// decorations and such are not lost along the way.
-module.exports = wrappy
-function wrappy (fn, cb) {
-  if (fn && cb) return wrappy(fn)(cb)
-
-  if (typeof fn !== 'function')
-    throw new TypeError('need wrapper function')
-
-  Object.keys(fn).forEach(function (k) {
-    wrapper[k] = fn[k]
-  })
-
-  return wrapper
-
-  function wrapper() {
-    var args = new Array(arguments.length)
-    for (var i = 0; i < args.length; i++) {
-      args[i] = arguments[i]
-    }
-    var ret = fn.apply(this, args)
-    var cb = args[args.length-1]
-    if (typeof ret === 'function' && ret !== cb) {
-      Object.keys(cb).forEach(function (k) {
-        ret[k] = cb[k]
-      })
-    }
-    return ret
-  }
-}
 
 
 /***/ }),
@@ -78307,8 +74270,8 @@ module.exports = JSON.parse('[[[0,44],"disallowed_STD3_valid"],[[45,46],"valid"]
 /******/ 		}
 /******/ 		// Create a new module (and put it into the cache)
 /******/ 		var module = __webpack_module_cache__[moduleId] = {
-/******/ 			id: moduleId,
-/******/ 			loaded: false,
+/******/ 			// no module.id needed
+/******/ 			// no module.loaded needed
 /******/ 			exports: {}
 /******/ 		};
 /******/ 	
@@ -78321,23 +74284,11 @@ module.exports = JSON.parse('[[[0,44],"disallowed_STD3_valid"],[[45,46],"valid"]
 /******/ 			if(threw) delete __webpack_module_cache__[moduleId];
 /******/ 		}
 /******/ 	
-/******/ 		// Flag the module as loaded
-/******/ 		module.loaded = true;
-/******/ 	
 /******/ 		// Return the exports of the module
 /******/ 		return module.exports;
 /******/ 	}
 /******/ 	
 /************************************************************************/
-/******/ 	/* webpack/runtime/node module decorator */
-/******/ 	(() => {
-/******/ 		__nccwpck_require__.nmd = (module) => {
-/******/ 			module.paths = [];
-/******/ 			if (!module.children) module.children = [];
-/******/ 			return module;
-/******/ 		};
-/******/ 	})();
-/******/ 	
 /******/ 	/* webpack/runtime/compat */
 /******/ 	
 /******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";
