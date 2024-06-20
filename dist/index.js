@@ -125,7 +125,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.get = exports.unzip = void 0;
+exports.unzip = unzip;
+exports.get = get;
 const node_fetch_retry_1 = __importDefault(__nccwpck_require__(3006));
 const fs_1 = __importDefault(__nccwpck_require__(7147));
 const https_1 = __importDefault(__nccwpck_require__(5687));
@@ -241,7 +242,6 @@ function unzip(url, bytesToExtract, stripPrefix, outputDirectory, verbose, store
         });
     });
 }
-exports.unzip = unzip;
 function get(repository_1, definitionId_1, artifactName_1, stripPrefix_1) {
     return __awaiter(this, arguments, void 0, function* (repository, definitionId, artifactName, stripPrefix, reasonFilter = 'all') {
         if (!repository || !definitionId) {
@@ -297,7 +297,6 @@ function get(repository_1, definitionId_1, artifactName_1, stripPrefix_1) {
         return { artifactName, stripPrefix, download, bytesToExtract, cacheId };
     });
 }
-exports.get = get;
 
 
 /***/ }),
