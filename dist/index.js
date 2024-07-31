@@ -68191,6 +68191,7 @@ module.exports = {
     return directory(source, options);
   },
   s3_v3: function (client, params, options) {
+    //@ts-ignore
     const { GetObjectCommand, HeadObjectCommand } = __nccwpck_require__(1794);
     const source = {
       size: async () => {
