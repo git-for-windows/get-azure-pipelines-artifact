@@ -37,7 +37,7 @@
     "@types/jest": "^29.5.14",
     "@types/node": "^22.9.0 <23.0.0",
     "@types/unzipper": "^0.10.10",
-    "@typescript-eslint/eslint-plugin": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.18.2",
     "@typescript-eslint/parser": "^8.18.2",
     "@vercel/ncc": "^0.38.3",
     "eslint": "^8.57.1",
