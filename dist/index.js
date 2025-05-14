@@ -65,6 +65,7 @@ function run() {
                     return (0, fs_1.readdirSync)(path).length === 0;
                 }
                 catch (e) {
+                    /* eslint @typescript-eslint/no-explicit-any: "off" */
                     return e instanceof Object && e.code === 'ENOENT';
                 }
             };
