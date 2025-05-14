@@ -5,19 +5,14 @@ import {readdirSync, unlinkSync} from 'fs'
 
 async function run(): Promise<void> {
   try {
-    const {
-      artifactName,
-      stripPrefix,
-      download,
-      bytesToExtract,
-      cacheId
-    } = await get(
-      core.getInput('repository'),
-      core.getInput('definitionId'),
-      core.getInput('artifact'),
-      core.getInput('stripPrefix'),
-      core.getInput('reasonFilter')
-    )
+    const {artifactName, stripPrefix, download, bytesToExtract, cacheId} =
+      await get(
+        core.getInput('repository'),
+        core.getInput('definitionId'),
+        core.getInput('artifact'),
+        core.getInput('stripPrefix'),
+        core.getInput('reasonFilter')
+      )
     const outputDirectory = core.getInput('path') || artifactName
     let useCache = core.getInput('cache') === 'true'
     const verbose: number | boolean = ((input?: string) =>
@@ -29,6 +24,7 @@ async function run(): Promise<void> {
       try {
         return readdirSync(path).length === 0
       } catch (e) {
+        /* eslint @typescript-eslint/no-explicit-any: "off" */
         return e instanceof Object && (e as any).code === 'ENOENT'
       }
     }
@@ -72,7 +68,9 @@ async function run(): Promise<void> {
           core.warning(`Failed to cache ${cacheId}`)
         }
       } catch (e) {
-        core.warning(`Failed to cache ${cacheId}: ${e instanceof Error && e.message}`)
+        core.warning(
+          `Failed to cache ${cacheId}: ${e instanceof Error && e.message}`
+        )
       }
 
       if (storeZipAs) {
