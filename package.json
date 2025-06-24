@@ -35,7 +35,7 @@
   "devDependencies": {
     "@stylistic/eslint-plugin": "^4.4.1",
     "@types/jest": "^29.5.14",
-    "@types/node": "^22.9.0 <23.0.0",
+    "@types/node": "^22.9.0 <25.0.0",
     "@types/unzipper": "^0.10.11",
     "@typescript-eslint/eslint-plugin": "^8.34.1",
     "@typescript-eslint/parser": "^8.35.0",
