@@ -61,7 +61,7 @@ export default defineConfig([
                 accessibility: "no-public",
             }],
 
-            "@stylistic/func-call-spacing": ["error", "never"],
+            "@stylistic/function-call-spacing": ["error", "never"],
             "@typescript-eslint/no-array-constructor": "error",
             "@typescript-eslint/no-empty-interface": "error",
             "@typescript-eslint/no-explicit-any": "error",
