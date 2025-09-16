@@ -50,7 +50,7 @@ git diff --quiet dist/ ||
 die '`dist/` is dirty'
 
 base="$(git rev-list HEAD -1 -- dist/)"
-if test 0 -lt $(git rev-list --count ${base+$base..}HEAD -- \*.ts)
+if test 0 -lt $(git rev-list --count ${base+$base..}HEAD -- \*.ts package-lock.json)
 then
     echo "Verifying that dist/ is up to date" >&2
     npm run build &&
