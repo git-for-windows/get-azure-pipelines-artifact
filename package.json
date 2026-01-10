@@ -27,7 +27,7 @@
   "license": "MIT",
   "dependencies": {
     "@actions/cache": "^5.0.2",
-    "@actions/core": "^2.0.1",
+    "@actions/core": "^2.0.2",
     "@adobe/node-fetch-retry": "^2.2.0",
     "node-fetch": "^2.7.0",
     "unzipper": "^0.12.3"
